@@ -1,0 +1,70 @@
+{
+  "config": {
+    "step": {
+      "station": {
+        "title": "DMI Vejr Opsætning",
+        "description": "Vælg en vejrstation eller brug din Home Assistant placering til prognoser.",
+        "data": {
+          "station_id": "Vejrstation",
+          "use_coordinates": "Brug Home Assistant koordinater til prognoser"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Kunne ikke oprette forbindelse til DMI API",
+      "unknown": "Uventet fejl"
+    },
+    "abort": {
+      "already_configured": "Denne station er allerede konfigureret"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "DMI Vejr Indstillinger",
+        "data": {
+          "update_interval": "Opdateringsinterval (minutter)",
+          "include_forecast": "Inkluder prognosedata"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "temp_dry": {
+        "name": "Temperatur"
+      },
+      "temp_dew": {
+        "name": "Dugpunkt"
+      },
+      "humidity": {
+        "name": "Luftfugtighed"
+      },
+      "pressure_at_sea": {
+        "name": "Lufttryk"
+      },
+      "wind_speed": {
+        "name": "Vindhastighed"
+      },
+      "wind_max": {
+        "name": "Vindstød"
+      },
+      "wind_dir": {
+        "name": "Vindretning"
+      },
+      "precip_past1h": {
+        "name": "Nedbør"
+      },
+      "visibility": {
+        "name": "Sigtbarhed"
+      },
+      "cloud_cover": {
+        "name": "Skydække"
+      },
+      "radia_glob": {
+        "name": "Solindstråling"
+      }
+    }
+  }
+}
+

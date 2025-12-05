@@ -1,0 +1,6 @@
+{
+  "name": "DMI Weather",
+  "country": ["DK", "GL", "FO"],
+  "homeassistant": "2024.1.0"
+}
+

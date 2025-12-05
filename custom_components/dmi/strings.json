@@ -1,0 +1,70 @@
+{
+  "config": {
+    "step": {
+      "station": {
+        "title": "DMI Weather Setup",
+        "description": "Choose a weather station or use your Home Assistant location for forecasts.",
+        "data": {
+          "station_id": "Weather Station",
+          "use_coordinates": "Use Home Assistant coordinates for forecasts"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to DMI API",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This station is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "DMI Weather Options",
+        "data": {
+          "update_interval": "Update interval (minutes)",
+          "include_forecast": "Include forecast data"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "temp_dry": {
+        "name": "Temperature"
+      },
+      "temp_dew": {
+        "name": "Dew Point"
+      },
+      "humidity": {
+        "name": "Humidity"
+      },
+      "pressure_at_sea": {
+        "name": "Pressure"
+      },
+      "wind_speed": {
+        "name": "Wind Speed"
+      },
+      "wind_max": {
+        "name": "Wind Gust"
+      },
+      "wind_dir": {
+        "name": "Wind Direction"
+      },
+      "precip_past1h": {
+        "name": "Precipitation"
+      },
+      "visibility": {
+        "name": "Visibility"
+      },
+      "cloud_cover": {
+        "name": "Cloud Cover"
+      },
+      "radia_glob": {
+        "name": "Solar Radiation"
+      }
+    }
+  }
+}
+
