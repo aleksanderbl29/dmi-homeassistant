@@ -107,20 +107,25 @@ class DMIApiClient:
         url = f"{METOBS_URL}/collections/observation/items"
         params = {
             "stationId": station_id,
-            "period": "latest",
+            "limit": 100,
         }
 
         data = await self._request(url, params)
 
+        # Extract the latest observation per parameter
         observations: dict[str, Any] = {}
         for feature in data.get("features", []):
             props = feature.get("properties", {})
             param_id = props.get("parameterId")
+            observed = props.get("observed")
+
             if param_id:
-                observations[param_id] = {
-                    "value": props.get("value"),
-                    "observed": props.get("observed"),
-                }
+                # Only keep if this is newer than what we have
+                if param_id not in observations or observed > observations[param_id]["observed"]:
+                    observations[param_id] = {
+                        "value": props.get("value"),
+                        "observed": observed,
+                    }
 
         return observations
 
@@ -147,7 +152,7 @@ class DMIApiClient:
             "coords": coords,
             "crs": "crs84",
             "parameter-name": "temperature-2m,wind-speed-10m,wind-dir-10m,relative-humidity,total-precipitation,cloud-cover",
-            "f": "GeoJSON",
+            "f": "CoverageJSON",
         }
 
         data = await self._request(url, params)

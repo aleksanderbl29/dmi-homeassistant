@@ -8,10 +8,10 @@ from homeassistant.components.sensor import (
 
 DOMAIN = "dmi"
 
-# API URLs - No authentication required
+# API URLs
 BASE_URL = "https://opendataapi.dmi.dk"
-METOBS_URL = f"{BASE_URL}/metObs/v2"
-FORECAST_URL = f"{BASE_URL}/forecastedr/v1"
+METOBS_URL = f"{BASE_URL}/v2/metObs"
+FORECAST_URL = f"{BASE_URL}/v1/forecastedr"
 
 # Update interval in seconds (10 minutes)
 DEFAULT_UPDATE_INTERVAL = 600
