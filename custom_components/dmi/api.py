@@ -54,6 +54,8 @@ class DMIApiClient:
                 data = await response.json()
                 _LOGGER.debug("Received response with %d bytes", len(str(data)))
                 return data
+        except RateLimitExceeded:
+            raise
         except aiohttp.ClientResponseError as err:
             if err.status == 429:
                 raise RateLimitExceeded("DMI API rate limit exceeded") from err
