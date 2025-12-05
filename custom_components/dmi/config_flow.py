@@ -64,7 +64,7 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            station_id = user_input.get(CONF_STATION_ID)
+            station_id = str(user_input.get(CONF_STATION_ID, ""))
             use_coordinates = user_input.get(CONF_USE_COORDINATES, False)
 
             # Find station info
@@ -73,8 +73,8 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
             longitude = None
 
             for station in self._stations:
-                if station["stationId"] == station_id:
-                    station_name = station["name"] or f"Station {station_id}"
+                if str(station.get("stationId", "")) == station_id:
+                    station_name = station.get("name") or f"Station {station_id}"
                     latitude = station.get("latitude")
                     longitude = station.get("longitude")
                     break
@@ -104,15 +104,17 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
             session = async_get_clientsession(self.hass)
             api_client = DMIApiClient(session)
             self._stations = await api_client.get_stations(active_only=True)
-        except CannotConnect:
+            _LOGGER.debug("Fetched %d stations from DMI API", len(self._stations))
+        except CannotConnect as err:
+            _LOGGER.error("Cannot connect to DMI API: %s", err)
             errors["base"] = "cannot_connect"
             return self.async_show_form(
                 step_id="station",
                 data_schema=vol.Schema({}),
                 errors=errors,
             )
-        except Exception:
-            _LOGGER.exception("Unexpected error fetching stations")
+        except Exception as err:
+            _LOGGER.exception("Unexpected error fetching stations: %s", err)
             errors["base"] = "unknown"
             return self.async_show_form(
                 step_id="station",
@@ -120,17 +122,26 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors=errors,
             )
 
-        # Build station options for selector
-        station_options = [
-            {
-                "value": station["stationId"],
-                "label": f"{station['name']} ({station['stationId']})"
-                if station["name"]
-                else station["stationId"],
-            }
-            for station in self._stations
-            if station["stationId"]
-        ]
+        # Check if we got any stations
+        if not self._stations:
+            _LOGGER.error("No stations returned from DMI API")
+            errors["base"] = "cannot_connect"
+            return self.async_show_form(
+                step_id="station",
+                data_schema=vol.Schema({}),
+                errors=errors,
+            )
+
+        # Build station options for selector - filter out any with None stationId
+        station_options = []
+        for station in self._stations:
+            station_id = station.get("stationId")
+            if station_id:
+                name = station.get("name") or f"Station {station_id}"
+                station_options.append({
+                    "value": str(station_id),
+                    "label": f"{name} ({station_id})",
+                })
 
         # Sort by label
         station_options.sort(key=lambda x: x["label"])

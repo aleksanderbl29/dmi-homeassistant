@@ -46,11 +46,14 @@ class DMIApiClient:
             CannotConnect: If connection fails.
         """
         try:
-            async with self._session.get(url, params=params) as response:
+            _LOGGER.debug("Making request to %s with params %s", url, params)
+            async with self._session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as response:
                 if response.status == 429:
                     raise RateLimitExceeded("DMI API rate limit exceeded")
                 response.raise_for_status()
-                return await response.json()
+                data = await response.json()
+                _LOGGER.debug("Received response with %d bytes", len(str(data)))
+                return data
         except aiohttp.ClientResponseError as err:
             if err.status == 429:
                 raise RateLimitExceeded("DMI API rate limit exceeded") from err
@@ -59,6 +62,12 @@ class DMIApiClient:
         except aiohttp.ClientError as err:
             _LOGGER.error("API connection error: %s", err)
             raise CannotConnect(f"Connection error: {err}") from err
+        except TimeoutError as err:
+            _LOGGER.error("API timeout: %s", err)
+            raise CannotConnect(f"Request timeout: {err}") from err
+        except Exception as err:
+            _LOGGER.error("Unexpected API error: %s", err)
+            raise CannotConnect(f"Unexpected error: {err}") from err
 
     async def get_stations(self, active_only: bool = True) -> list[dict[str, Any]]:
         """Fetch list of weather stations.

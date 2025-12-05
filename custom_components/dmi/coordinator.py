@@ -47,10 +47,14 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             api_client: DMI API client instance.
         """
         self.api = api_client
-        self.station_id: str = config_entry.data.get(CONF_STATION_ID, "")
-        self.station_name: str = config_entry.data.get(CONF_STATION_NAME, "DMI Weather")
-        self.latitude: float | None = config_entry.data.get(CONF_LATITUDE)
-        self.longitude: float | None = config_entry.data.get(CONF_LONGITUDE)
+        self.station_id: str = str(config_entry.data.get(CONF_STATION_ID) or "")
+        self.station_name: str = str(config_entry.data.get(CONF_STATION_NAME) or "DMI Weather")
+
+        # Handle coordinates - ensure they're float or None
+        lat = config_entry.data.get(CONF_LATITUDE)
+        lon = config_entry.data.get(CONF_LONGITUDE)
+        self.latitude: float | None = float(lat) if lat is not None else None
+        self.longitude: float | None = float(lon) if lon is not None else None
 
         # Get update interval from options or use default
         update_interval_minutes = config_entry.options.get(

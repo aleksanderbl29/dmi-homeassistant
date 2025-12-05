@@ -59,8 +59,8 @@ class DMISensor(CoordinatorEntity[DMIDataUpdateCoordinator], SensorEntity):
 
         self.entity_description = entity_description
         self._config_entry = config_entry
-        self._station_id = config_entry.data.get(CONF_STATION_ID, "")
-        self._station_name = config_entry.data.get(CONF_STATION_NAME, "DMI Weather")
+        self._station_id = str(config_entry.data.get(CONF_STATION_ID) or "")
+        self._station_name = str(config_entry.data.get(CONF_STATION_NAME) or "DMI Weather")
 
         # Unique ID follows pattern: {entry_id}_{sensor_key}
         self._attr_unique_id = f"{config_entry.entry_id}_{entity_description.key}"
