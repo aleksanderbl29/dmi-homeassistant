@@ -4,15 +4,14 @@ from __future__ import annotations
 
 from datetime import timedelta
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import UpdateFailed
-
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.dmi.api import CannotConnect, DMIApiClient, RateLimitExceeded
+from custom_components.dmi.api import CannotConnect, RateLimitExceeded
 from custom_components.dmi.const import (
     CONF_INCLUDE_FORECAST,
     CONF_STATION_ID,

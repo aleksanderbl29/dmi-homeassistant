@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -10,10 +9,9 @@ import pytest
 from homeassistant.components.weather import WeatherEntityFeature
 from homeassistant.const import UnitOfPressure, UnitOfSpeed, UnitOfTemperature
 from homeassistant.core import HomeAssistant
-
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.dmi.const import CONF_STATION_ID, CONF_STATION_NAME, DOMAIN
+from custom_components.dmi.const import DOMAIN
 from custom_components.dmi.coordinator import DMIDataUpdateCoordinator
 from custom_components.dmi.weather import DMIWeather
 
@@ -29,6 +27,9 @@ class TestDMIWeather:
         """Create a mock coordinator."""
         coordinator = MagicMock(spec=DMIDataUpdateCoordinator)
         coordinator.data = mock_coordinator_data
+        coordinator.include_forecast = True
+        coordinator.latitude = 55.614
+        coordinator.longitude = 12.6455
         return coordinator
 
     @pytest.fixture

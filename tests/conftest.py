@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE
-from homeassistant.core import HomeAssistant
-
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dmi.const import (
@@ -460,7 +457,7 @@ def mock_coordinator_data() -> dict[str, Any]:
                 },
             ],
         },
-        "last_updated": datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc),
+        "last_updated": datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
     }
 
 

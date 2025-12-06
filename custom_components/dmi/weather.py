@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.components.weather import (
@@ -11,6 +12,8 @@ from homeassistant.components.weather import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
+    UnitOfLength,
+    UnitOfPrecipitationDepth,
     UnitOfPressure,
     UnitOfSpeed,
     UnitOfTemperature,
@@ -20,8 +23,16 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONDITION_MAP, CONF_STATION_ID, CONF_STATION_NAME, DOMAIN
+from .const import (
+    ATTRIBUTION,
+    CONDITION_MAP,
+    CONF_STATION_ID,
+    CONF_STATION_NAME,
+    DOMAIN,
+)
 from .coordinator import DMIDataUpdateCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -43,8 +54,9 @@ class DMIWeather(CoordinatorEntity[DMIDataUpdateCoordinator], WeatherEntity):
     _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_native_pressure_unit = UnitOfPressure.HPA
     _attr_native_wind_speed_unit = UnitOfSpeed.METERS_PER_SECOND
-    _attr_native_visibility_unit = "km"
-    _attr_supported_features = WeatherEntityFeature.FORECAST_HOURLY
+    _attr_native_visibility_unit = UnitOfLength.KILOMETERS
+    _attr_native_precipitation_unit = UnitOfPrecipitationDepth.MILLIMETERS
+    _attr_attribution = ATTRIBUTION
 
     def __init__(
         self,
@@ -59,6 +71,22 @@ class DMIWeather(CoordinatorEntity[DMIDataUpdateCoordinator], WeatherEntity):
         self._station_name = str(config_entry.data.get(CONF_STATION_NAME) or "DMI Weather")
 
         self._attr_unique_id = f"{config_entry.entry_id}_weather"
+        self._supports_forecast = bool(
+            getattr(coordinator, "include_forecast", True)
+            and getattr(coordinator, "latitude", None) is not None
+            and getattr(coordinator, "longitude", None) is not None
+        )
+        self._attr_supported_features = (
+            WeatherEntityFeature.FORECAST_HOURLY if self._supports_forecast else 0
+        )
+        if not self._supports_forecast:
+            _LOGGER.debug(
+                "Disabling hourly forecast support for station %s (include_forecast=%s, coords=%s,%s)",
+                self._station_id,
+                getattr(coordinator, "include_forecast", None),
+                getattr(coordinator, "latitude", None),
+                getattr(coordinator, "longitude", None),
+            )
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -151,6 +179,13 @@ class DMIWeather(CoordinatorEntity[DMIDataUpdateCoordinator], WeatherEntity):
 
     async def async_forecast_hourly(self) -> list[Forecast] | None:
         """Return the hourly forecast."""
+        if not self._supports_forecast:
+            _LOGGER.debug(
+                "Hourly forecast requested but not supported for station %s",
+                self._station_id,
+            )
+            return None
+
         if self.coordinator.data is None:
             return None
 

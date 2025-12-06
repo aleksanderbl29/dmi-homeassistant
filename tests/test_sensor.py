@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.core import HomeAssistant
-
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.dmi.const import CONF_STATION_ID, CONF_STATION_NAME, DOMAIN, SENSOR_TYPES
+from custom_components.dmi.const import DOMAIN, SENSOR_TYPES
 from custom_components.dmi.coordinator import DMIDataUpdateCoordinator
 from custom_components.dmi.sensor import DMISensor
 
@@ -211,7 +210,7 @@ class TestDMISensor:
             "observations": {
                 "temp_dry": {"value": 15.5},  # No 'observed' key
             },
-            "last_updated": datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc),
+            "last_updated": datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
         }
 
         sensor = DMISensor(

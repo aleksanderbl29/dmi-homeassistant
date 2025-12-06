@@ -7,6 +7,7 @@ from homeassistant.components.sensor import (
 )
 
 DOMAIN = "dmi"
+ATTRIBUTION = "Data provided by DMI Open Data"
 
 # API URLs
 BASE_URL = "https://opendataapi.dmi.dk"

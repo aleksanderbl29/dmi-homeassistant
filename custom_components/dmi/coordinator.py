@@ -7,7 +7,6 @@ from datetime import timedelta
 from typing import Any
 
 import async_timeout
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -86,6 +85,13 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """
         try:
             async with async_timeout.timeout(30):
+                _LOGGER.debug(
+                    "Updating DMI data for station %s (forecast enabled=%s, coords=%s,%s)",
+                    self.station_id,
+                    self.include_forecast,
+                    self.latitude,
+                    self.longitude,
+                )
                 # Fetch observations
                 observations = await self.api.get_observations(self.station_id)
 
@@ -99,6 +105,11 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     try:
                         forecast = await self.api.get_forecast(
                             self.latitude, self.longitude
+                        )
+                        _LOGGER.debug(
+                            "Fetched forecast for %s with %d hourly entries",
+                            self.station_id,
+                            len(forecast.get("hourly", [])) if forecast else 0,
                         )
                     except Exception as err:
                         _LOGGER.warning("Failed to fetch forecast: %s", err)
