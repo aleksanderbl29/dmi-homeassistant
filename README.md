@@ -91,12 +91,20 @@ Depending on what the selected station reports, you may get sensors for:
 
 ## API Information
 
-This integration uses DMI's Open Data API at `opendataapi.dmi.dk`. The API is completely open and requires no authentication.
+This integration uses DMI's Open Data API at `opendataapi.dmi.dk`. The supported endpoints are open and require no authentication.
 
 ### Data Sources
 
 - **Observations**: Real-time data from DMI weather stations
 - **Forecasts**: HARMONIE-DINI model forecasts
+
+| Data | Endpoint | API key | Used by default |
+|---|---|---:|---:|
+| Station observations | DMI metObs v2 | No | Yes |
+| HARMONIE forecast point data | DMI Forecast EDR v1 | No | Yes |
+| Deprecated DMI gateway | `dmigw.govcloud.dk` | Yes | No |
+
+The integration remains API-key-free by default. Authenticated DMI sources must be opt-in, documented, and reviewed separately before use.
 
 ### Rate Limiting
 
@@ -116,6 +124,14 @@ Forecast requires coordinates. Enable "Use Home Assistant coordinates for foreca
 
 Check your internet connection. The integration will automatically retry when connectivity is restored.
 
+### HTTP 429 errors
+
+HTTP 429 means DMI fair-use or rate limiting, not a missing API key. Increase the update interval or wait before retrying.
+
+### HTTP 401 or 403 errors
+
+HTTP 401 or 403 would indicate the wrong hostname or an upstream DMI change, because the current supported hostname, `opendataapi.dmi.dk`, does not require authentication. The deprecated `dmigw.govcloud.dk` gateway requires authentication and is not used by this integration.
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit issues and pull requests.
@@ -127,6 +143,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Disclaimer
 
 This integration is not affiliated with or endorsed by DMI. Weather data is provided by DMI's open data initiative.
+
+The included integration icon and logo are original project branding and are not the official DMI logo.
 
 ## Links
 
