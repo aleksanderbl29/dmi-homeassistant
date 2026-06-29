@@ -38,9 +38,19 @@ MOCK_STATIONS_RESPONSE = {
                 "wmoCountryCode": "6080",
                 "operationFrom": "1983-06-16T00:00:00Z",
                 "parameterId": [
-                    "cloud_cover", "cloud_height", "humidity", "precip_past1h",
-                    "pressure", "pressure_at_sea", "temp_dew", "temp_dry",
-                    "visibility", "weather", "wind_dir", "wind_max", "wind_speed"
+                    "cloud_cover",
+                    "cloud_height",
+                    "humidity",
+                    "precip_past1h",
+                    "pressure",
+                    "pressure_at_sea",
+                    "temp_dew",
+                    "temp_dry",
+                    "visibility",
+                    "weather",
+                    "wind_dir",
+                    "wind_max",
+                    "wind_speed",
                 ],
                 "created": "2025-06-23T06:18:29Z",
                 "barometerHeight": None,
@@ -342,7 +352,7 @@ MOCK_FORECAST_RESPONSE = {
             "shape": [4, 1, 1],
             "values": [180, 185, 190, 188],
         },
-        "relative-humidity": {
+        "relative-humidity-2m": {
             "type": "NdArray",
             "dataType": "float",
             "axisNames": ["t", "y", "x"],
@@ -356,7 +366,7 @@ MOCK_FORECAST_RESPONSE = {
             "shape": [4, 1, 1],
             "values": [0.0, 0.1, 0.2, 0.0],
         },
-        "cloud-cover": {
+        "fraction-of-cloud-cover": {
             "type": "NdArray",
             "dataType": "float",
             "axisNames": ["t", "y", "x"],
@@ -467,52 +477,63 @@ def mock_api_client() -> MagicMock:
     client = MagicMock()
 
     # Return processed station data (as the API client returns after parsing)
-    client.get_stations = AsyncMock(return_value=[
-        {
-            "stationId": "06180",
-            "name": "Københavns Lufthavn",
-            "latitude": 55.614,
-            "longitude": 12.6455,
-            "type": "Synop",
-            "parameterId": [
-                "cloud_cover", "humidity", "pressure_at_sea", "temp_dry",
-                "visibility", "wind_dir", "wind_speed"
-            ],
-        },
-        {
-            "stationId": "06070",
-            "name": "Aarhus Lufthavn",
-            "latitude": 56.3031,
-            "longitude": 10.6195,
-            "type": "Synop",
-            "parameterId": ["temp_dry", "humidity", "wind_speed", "pressure_at_sea"],
-        },
-    ])
+    client.get_stations = AsyncMock(
+        return_value=[
+            {
+                "stationId": "06180",
+                "name": "Københavns Lufthavn",
+                "latitude": 55.614,
+                "longitude": 12.6455,
+                "type": "Synop",
+                "parameterId": [
+                    "cloud_cover",
+                    "humidity",
+                    "pressure_at_sea",
+                    "temp_dry",
+                    "visibility",
+                    "wind_dir",
+                    "wind_speed",
+                ],
+            },
+            {
+                "stationId": "06070",
+                "name": "Aarhus Lufthavn",
+                "latitude": 56.3031,
+                "longitude": 10.6195,
+                "type": "Synop",
+                "parameterId": ["temp_dry", "humidity", "wind_speed", "pressure_at_sea"],
+            },
+        ]
+    )
 
     # Return processed observation data (keyed by parameterId)
-    client.get_observations = AsyncMock(return_value={
-        "temp_dry": {"value": 15.5, "observed": "2024-01-15T12:00:00Z"},
-        "humidity": {"value": 75.0, "observed": "2024-01-15T12:00:00Z"},
-        "wind_speed": {"value": 5.2, "observed": "2024-01-15T12:00:00Z"},
-        "wind_dir": {"value": 180.0, "observed": "2024-01-15T12:00:00Z"},
-        "pressure_at_sea": {"value": 1013.25, "observed": "2024-01-15T12:00:00Z"},
-        "cloud_cover": {"value": 50.0, "observed": "2024-01-15T12:00:00Z"},
-    })
+    client.get_observations = AsyncMock(
+        return_value={
+            "temp_dry": {"value": 15.5, "observed": "2024-01-15T12:00:00Z"},
+            "humidity": {"value": 75.0, "observed": "2024-01-15T12:00:00Z"},
+            "wind_speed": {"value": 5.2, "observed": "2024-01-15T12:00:00Z"},
+            "wind_dir": {"value": 180.0, "observed": "2024-01-15T12:00:00Z"},
+            "pressure_at_sea": {"value": 1013.25, "observed": "2024-01-15T12:00:00Z"},
+            "cloud_cover": {"value": 50.0, "observed": "2024-01-15T12:00:00Z"},
+        }
+    )
 
     # Return processed forecast data (with temperature converted from Kelvin)
-    client.get_forecast = AsyncMock(return_value={
-        "hourly": [
-            {
-                "datetime": "2024-01-15T12:00:00.000Z",
-                "temperature": 15.5,  # 288.65K - 273.15
-                "wind_speed": 5.0,
-                "wind_dir": 180,
-                "humidity": 75.0,
-                "precipitation": 0.0,
-                "cloud_cover": 50.0,
-            },
-        ],
-    })
+    client.get_forecast = AsyncMock(
+        return_value={
+            "hourly": [
+                {
+                    "datetime": "2024-01-15T12:00:00.000Z",
+                    "temperature": 15.5,  # 288.65K - 273.15
+                    "wind_speed": 5.0,
+                    "wind_dir": 180,
+                    "humidity": 75.0,
+                    "precipitation": 0.0,
+                    "cloud_cover": 50.0,
+                },
+            ],
+        }
+    )
 
     client.test_connection = AsyncMock(return_value=True)
     return client
@@ -521,12 +542,15 @@ def mock_api_client() -> MagicMock:
 @pytest.fixture
 def mock_dmi_api(mock_api_client: MagicMock) -> Generator[MagicMock, None, None]:
     """Mock the DMI API client."""
-    with patch(
-        "custom_components.dmi.DMIApiClient",
-        return_value=mock_api_client,
-    ), patch(
-        "custom_components.dmi.config_flow.DMIApiClient",
-        return_value=mock_api_client,
+    with (
+        patch(
+            "custom_components.dmi.DMIApiClient",
+            return_value=mock_api_client,
+        ),
+        patch(
+            "custom_components.dmi.config_flow.DMIApiClient",
+            return_value=mock_api_client,
+        ),
     ):
         yield mock_api_client
 

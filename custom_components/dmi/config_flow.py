@@ -49,9 +49,7 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
         """Initialize the config flow."""
         self._stations: list[dict[str, Any]] = []
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the initial step."""
         return await self.async_step_station(user_input)
 
@@ -136,10 +134,12 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
             station_id = station.get("stationId")
             if station_id:
                 name = station.get("name") or f"Station {station_id}"
-                station_options.append({
-                    "value": str(station_id),
-                    "label": f"{name} ({station_id})",
-                })
+                station_options.append(
+                    {
+                        "value": str(station_id),
+                        "label": f"{name} ({station_id})",
+                    }
+                )
 
         # Sort by label
         station_options.sort(key=lambda x: x["label"])
@@ -172,9 +172,7 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
 class DMIOptionsFlowHandler(OptionsFlow):
     """Handle options flow for DMI Weather."""
 
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Manage the options."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
@@ -183,9 +181,7 @@ class DMIOptionsFlowHandler(OptionsFlow):
         current_interval = self.config_entry.options.get(
             CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL // 60
         )
-        current_include_forecast = self.config_entry.options.get(
-            CONF_INCLUDE_FORECAST, True
-        )
+        current_include_forecast = self.config_entry.options.get(CONF_INCLUDE_FORECAST, True)
 
         data_schema = vol.Schema(
             {
@@ -209,4 +205,3 @@ class DMIOptionsFlowHandler(OptionsFlow):
         )
 
         return self.async_show_form(step_id="init", data_schema=data_schema)
-

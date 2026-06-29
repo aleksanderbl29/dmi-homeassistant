@@ -47,7 +47,9 @@ class DMIApiClient:
         """
         try:
             _LOGGER.debug("Making request to %s with params %s", url, params)
-            async with self._session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=30)) as response:
+            async with self._session.get(
+                url, params=params, timeout=aiohttp.ClientTimeout(total=30)
+            ) as response:
                 if response.status == 429:
                     raise RateLimitExceeded("DMI API rate limit exceeded")
                 response.raise_for_status()
@@ -140,9 +142,7 @@ class DMIApiClient:
 
         return observations
 
-    async def get_forecast(
-        self, latitude: float, longitude: float
-    ) -> dict[str, Any]:
+    async def get_forecast(self, latitude: float, longitude: float) -> dict[str, Any]:
         """Fetch forecast data for coordinates.
 
         Uses the HARMONIE model for forecast data.
@@ -162,7 +162,7 @@ class DMIApiClient:
         params = {
             "coords": coords,
             "crs": "crs84",
-            "parameter-name": "temperature-2m,wind-speed-10m,wind-dir-10m,relative-humidity,total-precipitation,cloud-cover",
+            "parameter-name": "temperature-2m,wind-speed-10m,wind-dir-10m,relative-humidity-2m,total-precipitation,fraction-of-cloud-cover",
             "f": "CoverageJSON",
         }
 
@@ -184,9 +184,9 @@ class DMIApiClient:
         temperature_data = ranges.get("temperature-2m", {}).get("values", [])
         wind_speed_data = ranges.get("wind-speed-10m", {}).get("values", [])
         wind_dir_data = ranges.get("wind-dir-10m", {}).get("values", [])
-        humidity_data = ranges.get("relative-humidity", {}).get("values", [])
+        humidity_data = ranges.get("relative-humidity-2m", {}).get("values", [])
         precipitation_data = ranges.get("total-precipitation", {}).get("values", [])
-        cloud_cover_data = ranges.get("cloud-cover", {}).get("values", [])
+        cloud_cover_data = ranges.get("fraction-of-cloud-cover", {}).get("values", [])
 
         for i, time_value in enumerate(time_values):
             forecast_entry: dict[str, Any] = {
@@ -235,4 +235,3 @@ class DMIApiClient:
         except Exception as err:
             _LOGGER.error("Connection test failed: %s", err)
             raise CannotConnect(f"Connection test failed: {err}") from err
-
