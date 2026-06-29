@@ -54,9 +54,7 @@ class TestDMIConfigFlow:
         mock_stations: list[dict[str, Any]],
     ) -> None:
         """Test user step shows station selection form."""
-        with patch(
-            "custom_components.dmi.config_flow.DMIApiClient"
-        ) as mock_api_class:
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
             mock_api = MagicMock()
             mock_api.get_stations = AsyncMock(return_value=mock_stations)
             mock_api_class.return_value = mock_api
@@ -75,9 +73,7 @@ class TestDMIConfigFlow:
         mock_stations: list[dict[str, Any]],
     ) -> None:
         """Test successful config entry creation."""
-        with patch(
-            "custom_components.dmi.config_flow.DMIApiClient"
-        ) as mock_api_class:
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
             mock_api = MagicMock()
             mock_api.get_stations = AsyncMock(return_value=mock_stations)
             mock_api_class.return_value = mock_api
@@ -115,9 +111,7 @@ class TestDMIConfigFlow:
         hass.config.latitude = 56.0
         hass.config.longitude = 11.0
 
-        with patch(
-            "custom_components.dmi.config_flow.DMIApiClient"
-        ) as mock_api_class:
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
             mock_api = MagicMock()
             mock_api.get_stations = AsyncMock(return_value=mock_stations)
             mock_api_class.return_value = mock_api
@@ -143,9 +137,7 @@ class TestDMIConfigFlow:
         hass: HomeAssistant,
     ) -> None:
         """Test connection error shows form with error."""
-        with patch(
-            "custom_components.dmi.config_flow.DMIApiClient"
-        ) as mock_api_class:
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
             mock_api = MagicMock()
             mock_api.get_stations = AsyncMock(side_effect=CannotConnect("Failed"))
             mock_api_class.return_value = mock_api
@@ -162,9 +154,7 @@ class TestDMIConfigFlow:
         hass: HomeAssistant,
     ) -> None:
         """Test unknown error shows form with error."""
-        with patch(
-            "custom_components.dmi.config_flow.DMIApiClient"
-        ) as mock_api_class:
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
             mock_api = MagicMock()
             mock_api.get_stations = AsyncMock(side_effect=Exception("Unknown"))
             mock_api_class.return_value = mock_api
@@ -181,9 +171,7 @@ class TestDMIConfigFlow:
         hass: HomeAssistant,
     ) -> None:
         """Test empty station list shows error."""
-        with patch(
-            "custom_components.dmi.config_flow.DMIApiClient"
-        ) as mock_api_class:
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
             mock_api = MagicMock()
             mock_api.get_stations = AsyncMock(return_value=[])
             mock_api_class.return_value = mock_api
@@ -205,9 +193,7 @@ class TestDMIConfigFlow:
         # Add existing entry
         mock_config_entry.add_to_hass(hass)
 
-        with patch(
-            "custom_components.dmi.config_flow.DMIApiClient"
-        ) as mock_api_class:
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
             mock_api = MagicMock()
             mock_api.get_stations = AsyncMock(return_value=mock_stations)
             mock_api_class.return_value = mock_api
@@ -245,9 +231,7 @@ class TestDMIConfigFlow:
             },
         ]
 
-        with patch(
-            "custom_components.dmi.config_flow.DMIApiClient"
-        ) as mock_api_class:
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
             mock_api = MagicMock()
             mock_api.get_stations = AsyncMock(return_value=stations_with_invalid)
             mock_api_class.return_value = mock_api
@@ -271,9 +255,7 @@ class TestDMIOptionsFlow:
         """Test options flow shows form with current values."""
         mock_config_entry.add_to_hass(hass)
 
-        result = await hass.config_entries.options.async_init(
-            mock_config_entry.entry_id
-        )
+        result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
 
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "init"
@@ -286,9 +268,7 @@ class TestDMIOptionsFlow:
         """Test submitting options updates the entry."""
         mock_config_entry.add_to_hass(hass)
 
-        result = await hass.config_entries.options.async_init(
-            mock_config_entry.entry_id
-        )
+        result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
 
         result = await hass.config_entries.options.async_configure(
             result["flow_id"],

@@ -231,4 +231,3 @@ class DMIWeather(CoordinatorEntity[DMIDataUpdateCoordinator], WeatherEntity):
             forecasts.append(forecast)
 
         return forecasts
-
