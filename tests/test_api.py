@@ -342,4 +342,3 @@ class TestDMIApiClient:
 
         with pytest.raises(CannotConnect):
             await api_client.get_stations()
-

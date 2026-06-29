@@ -112,4 +112,3 @@ class DMISensor(CoordinatorEntity[DMIDataUpdateCoordinator], SensorEntity):
             attributes["last_updated"] = last_updated.isoformat()
 
         return attributes
-
