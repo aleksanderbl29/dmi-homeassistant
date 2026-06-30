@@ -540,7 +540,7 @@ def mock_api_client() -> MagicMock:
 
 
 @pytest.fixture
-def mock_dmi_api(mock_api_client: MagicMock) -> Generator[MagicMock, None, None]:
+def mock_dmi_api(mock_api_client: MagicMock) -> Generator[MagicMock]:
     """Mock the DMI API client."""
     with (
         patch(
@@ -558,6 +558,6 @@ def mock_dmi_api(mock_api_client: MagicMock) -> Generator[MagicMock, None, None]
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(
     enable_custom_integrations: None,
-) -> Generator[None, None, None]:
+) -> Generator[None]:
     """Automatically enable custom integrations for all tests."""
     yield
