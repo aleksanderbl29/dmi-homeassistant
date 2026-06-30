@@ -5,8 +5,8 @@
   "config_flow": true,
   "documentation": "https://github.com/aleksanderbl29/dmi-homeassistant",
   "integration_type": "service",
-  "issue_tracker": "https://github.com/aleksanderbl29/dmi-homeassistant/issues",
   "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/aleksanderbl29/dmi-homeassistant/issues",
   "requirements": ["aiohttp>=3.8.0"],
   "version": "1.0.0"
 }
