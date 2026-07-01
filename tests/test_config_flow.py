@@ -243,6 +243,55 @@ class TestDMIConfigFlow:
             assert result["type"] == FlowResultType.FORM
             # Form should be shown with valid stations only
 
+    async def test_user_flow_consolidates_duplicate_station_options(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test duplicate station ids only appear once in the selector."""
+        duplicate_stations = [
+            {
+                "stationId": "06180",
+                "name": "Københavns Lufthavn",
+                "latitude": 55.6000,
+                "longitude": 12.6000,
+            },
+            {
+                "stationId": "06180",
+                "name": "Københavns Lufthavn",
+                "latitude": 55.6140,
+                "longitude": 12.6455,
+            },
+            {
+                "stationId": "06070",
+                "name": "Aarhus Lufthavn",
+                "latitude": 56.3031,
+                "longitude": 10.6195,
+            },
+        ]
+
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
+            mock_api = MagicMock()
+            mock_api.get_stations = AsyncMock(return_value=duplicate_stations)
+            mock_api_class.return_value = mock_api
+
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+
+            assert result["type"] == FlowResultType.FORM
+            station_selector = next(
+                selector
+                for field, selector in result["data_schema"].schema.items()
+                if field.schema == CONF_STATION_ID
+            )
+            options = station_selector.config["options"]
+
+            assert len(options) == 2
+            assert options == [
+                {"value": "06070", "label": "Aarhus Lufthavn (06070)"},
+                {"value": "06180", "label": "Københavns Lufthavn (06180)"},
+            ]
+
 
 class TestDMIOptionsFlow:
     """Test cases for DMI options flow."""

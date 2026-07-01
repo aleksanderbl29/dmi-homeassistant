@@ -100,6 +100,54 @@ class TestDMIApiClient:
         assert len(stations) == 1
         assert stations[0]["stationId"] == "12345"
 
+    async def test_get_stations_consolidates_duplicate_station_ids(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test duplicate station ids are consolidated to the current record."""
+        mock_data = {
+            "features": [
+                {
+                    "properties": {
+                        "stationId": "06180",
+                        "name": "Københavns Lufthavn",
+                        "type": "Synop",
+                        "parameterId": ["temp_dry"],
+                        "validFrom": "1983-06-16T00:00:00Z",
+                        "validTo": "2019-01-15T13:34:48Z",
+                    },
+                    "geometry": {"coordinates": [12.6000, 55.6000]},
+                },
+                {
+                    "properties": {
+                        "stationId": "06180",
+                        "name": "Københavns Lufthavn",
+                        "type": "Synop",
+                        "parameterId": ["humidity", "wind_speed"],
+                        "validFrom": "2019-01-15T13:34:48Z",
+                        "validTo": None,
+                    },
+                    "geometry": {"coordinates": [12.6455, 55.614]},
+                },
+            ],
+        }
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=mock_data)
+        mock_response.raise_for_status = MagicMock()
+
+        mock_context = AsyncMock()
+        mock_context.__aenter__.return_value = mock_response
+        api_client._session.get = MagicMock(return_value=mock_context)
+
+        stations = await api_client.get_stations()
+
+        assert len(stations) == 1
+        assert stations[0]["stationId"] == "06180"
+        assert stations[0]["latitude"] == 55.614
+        assert stations[0]["longitude"] == 12.6455
+        assert stations[0]["parameterId"] == ["temp_dry", "humidity", "wind_speed"]
+
     # --- get_observations tests ---
 
     async def test_get_observations_success(

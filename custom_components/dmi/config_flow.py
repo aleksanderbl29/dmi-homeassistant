@@ -129,17 +129,17 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
             )
 
         # Build station options for selector - filter out any with None stationId
-        station_options = []
+        station_options_by_id: dict[str, dict[str, str]] = {}
         for station in self._stations:
             station_id = station.get("stationId")
             if station_id:
                 name = station.get("name") or f"Station {station_id}"
-                station_options.append(
-                    {
-                        "value": str(station_id),
-                        "label": f"{name} ({station_id})",
-                    }
-                )
+                station_options_by_id[str(station_id)] = {
+                    "value": str(station_id),
+                    "label": f"{name} ({station_id})",
+                }
+
+        station_options = list(station_options_by_id.values())
 
         # Sort by label
         station_options.sort(key=lambda x: x["label"])
