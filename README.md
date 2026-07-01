@@ -144,6 +144,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 This integration is not affiliated with or endorsed by DMI. Weather data is provided by DMI's open data initiative.
 
+The included integration icon and logo are original project branding and are not the official DMI logo.
+
 ## Links
 
 - [DMI Open Data](https://opendataapi.dmi.dk/)
