@@ -45,6 +45,34 @@ class DMIApiClient:
                 + ", ".join(sorted(forbidden_params))
             )
 
+    @staticmethod
+    def _normalize_parameter_ids(parameter_ids: Any) -> list[str]:
+        """Return a stable list of parameter ids."""
+        if isinstance(parameter_ids, list):
+            values = parameter_ids
+        elif parameter_ids is None:
+            values = []
+        else:
+            values = [parameter_ids]
+
+        normalized: list[str] = []
+        for value in values:
+            if value is None:
+                continue
+            parameter_id = str(value)
+            if parameter_id not in normalized:
+                normalized.append(parameter_id)
+        return normalized
+
+    @staticmethod
+    def _station_sort_key(props: dict[str, Any]) -> tuple[int, str, str]:
+        """Build a sort key that prefers the current station record."""
+        return (
+            1 if props.get("validTo") is None else 0,
+            str(props.get("validFrom") or ""),
+            str(props.get("updated") or props.get("created") or ""),
+        )
+
     async def _request(self, url: str, params: dict[str, Any] | None = None) -> dict:
         """Make an API request.
 
@@ -104,24 +132,51 @@ class DMIApiClient:
 
         data = await self._request(url, params)
 
-        stations = []
+        stations_by_id: dict[str, dict[str, Any]] = {}
         for feature in data.get("features", []):
             props = feature.get("properties", {})
             geometry = feature.get("geometry", {})
             coordinates = geometry.get("coordinates", [None, None])
+            station_id = props.get("stationId")
+
+            if not station_id:
+                continue
 
             station = {
-                "stationId": props.get("stationId"),
+                "stationId": station_id,
                 "name": props.get("name"),
                 "longitude": coordinates[0] if len(coordinates) > 0 else None,
                 "latitude": coordinates[1] if len(coordinates) > 1 else None,
                 "type": props.get("type"),
-                "parameterId": props.get("parameterId", []),
+                "parameterId": self._normalize_parameter_ids(props.get("parameterId")),
             }
-            if station["stationId"]:
-                stations.append(station)
 
-        return stations
+            existing = stations_by_id.get(str(station_id))
+            if existing is None:
+                stations_by_id[str(station_id)] = {
+                    **station,
+                    "_sort_key": self._station_sort_key(props),
+                }
+                continue
+
+            merged_parameter_ids = existing["parameterId"][:]
+            for parameter_id in station["parameterId"]:
+                if parameter_id not in merged_parameter_ids:
+                    merged_parameter_ids.append(parameter_id)
+
+            if self._station_sort_key(props) >= existing["_sort_key"]:
+                stations_by_id[str(station_id)] = {
+                    **station,
+                    "parameterId": merged_parameter_ids,
+                    "_sort_key": self._station_sort_key(props),
+                }
+            else:
+                existing["parameterId"] = merged_parameter_ids
+
+        return [
+            {key: value for key, value in station.items() if key != "_sort_key"}
+            for station in stations_by_id.values()
+        ]
 
     async def get_observations(self, station_id: str) -> dict[str, Any]:
         """Fetch latest observations for a station.
