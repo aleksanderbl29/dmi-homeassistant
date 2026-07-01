@@ -1,12 +1,16 @@
 {
   "domain": "dmi",
   "name": "DMI Weather",
-  "codeowners": ["@aleksanderbl29"],
+  "codeowners": [
+    "@aleksanderbl29"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/aleksanderbl29/dmi-homeassistant",
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/aleksanderbl29/dmi-homeassistant/issues",
-  "requirements": ["aiohttp>=3.8.0"],
+  "requirements": [
+    "aiohttp>=3.8.0"
+  ],
   "version": "1.0.0"
 }
