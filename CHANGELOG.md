@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.0.0...v1.0.1) (2026-07-01)
+
+
+### Bug Fixes
+
+* **listing:** consolidate duplicate DMI station listings ([#7](https://github.com/aleksanderbl29/dmi-homeassistant/issues/7)) ([597a2b2](https://github.com/aleksanderbl29/dmi-homeassistant/commit/597a2b289129ed1c1b0ad56786ecdfed8bd36ae0))
+
 # 1.0.0 (2026-07-01)
 
 
