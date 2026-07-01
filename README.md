@@ -89,11 +89,16 @@ Depending on what the selected station reports, you may get sensors for:
 
 > **Note**: Not all stations report all parameters. The integration only creates sensors for parameters the selected station actually provides.
 
-## API Information
+## Data Sources And API Keys
 
-This integration uses DMI's Open Data API at `opendataapi.dmi.dk`. The API is completely open and requires no authentication.
+This integration uses DMI's Open Data API at `opendataapi.dmi.dk`. The API is open and requires no authentication on the endpoints used here.
 
-### Data Sources
+- `metObs` observations via `https://opendataapi.dmi.dk/v2/metObs`: no API key
+- Forecast EDR via `https://opendataapi.dmi.dk/v1/forecastedr`: no API key
+- No Home Assistant secrets, options, or config-flow fields are used for API keys
+- The deprecated `dmigw.govcloud.dk` hostname is not used
+
+### Source Matrix
 
 - **Observations**: Real-time data from DMI weather stations
 - **Forecasts**: HARMONIE-DINI model forecasts

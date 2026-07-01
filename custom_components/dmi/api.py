@@ -10,6 +10,7 @@ import aiohttp
 from .const import FORECAST_URL, METOBS_URL
 
 _LOGGER = logging.getLogger(__name__)
+AUTH_PARAM_NAMES = frozenset({"api-key", "apikey", "token"})
 
 
 class CannotConnect(Exception):
@@ -31,6 +32,19 @@ class DMIApiClient:
         """
         self._session = session
 
+    @staticmethod
+    def _ensure_no_auth_params(params: dict[str, Any] | None) -> None:
+        """Reject authenticated query params on the open-data client."""
+        if params is None:
+            return
+
+        forbidden_params = AUTH_PARAM_NAMES & set(params)
+        if forbidden_params:
+            raise CannotConnect(
+                "Authenticated DMI query parameters are not supported on the open-data client: "
+                + ", ".join(sorted(forbidden_params))
+            )
+
     async def _request(self, url: str, params: dict[str, Any] | None = None) -> dict:
         """Make an API request.
 
@@ -46,6 +60,7 @@ class DMIApiClient:
             CannotConnect: If connection fails.
         """
         try:
+            self._ensure_no_auth_params(params)
             _LOGGER.debug("Making request to %s with params %s", url, params)
             async with self._session.get(
                 url, params=params, timeout=aiohttp.ClientTimeout(total=30)

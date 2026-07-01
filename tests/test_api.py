@@ -8,7 +8,13 @@ from unittest.mock import AsyncMock, MagicMock
 import aiohttp
 import pytest
 
-from custom_components.dmi.api import CannotConnect, DMIApiClient, RateLimitExceeded
+from custom_components.dmi.api import (
+    AUTH_PARAM_NAMES,
+    CannotConnect,
+    DMIApiClient,
+    RateLimitExceeded,
+)
+from custom_components.dmi.const import BASE_URL, FORECAST_URL, METOBS_URL
 
 
 class TestDMIApiClient:
@@ -155,6 +161,56 @@ class TestDMIApiClient:
         assert observations["temp_dry"]["value"] == 15.5
         assert observations["temp_dry"]["observed"] == "2024-01-15T12:00:00Z"
 
+    async def test_get_observations_uses_no_key_opendata_endpoint(
+        self,
+        api_client: DMIApiClient,
+        mock_observations_data: dict[str, Any],
+    ) -> None:
+        """Test observations use the no-key DMI Open Data endpoint."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=mock_observations_data)
+        mock_response.raise_for_status = MagicMock()
+
+        mock_context = AsyncMock()
+        mock_context.__aenter__.return_value = mock_response
+        api_client._session.get = MagicMock(return_value=mock_context)
+
+        await api_client.get_observations("06180")
+
+        url = api_client._session.get.call_args.args[0]
+        params = api_client._session.get.call_args.kwargs["params"]
+
+        assert url == f"{METOBS_URL}/collections/observation/items"
+        assert url.startswith(BASE_URL)
+        assert "dmigw.govcloud.dk" not in url
+        assert not (AUTH_PARAM_NAMES & set(params))
+
+    async def test_get_stations_uses_no_key_opendata_endpoint(
+        self,
+        api_client: DMIApiClient,
+        mock_stations_data: dict[str, Any],
+    ) -> None:
+        """Test station discovery uses the no-key DMI Open Data endpoint."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=mock_stations_data)
+        mock_response.raise_for_status = MagicMock()
+
+        mock_context = AsyncMock()
+        mock_context.__aenter__.return_value = mock_response
+        api_client._session.get = MagicMock(return_value=mock_context)
+
+        await api_client.get_stations()
+
+        url = api_client._session.get.call_args.args[0]
+        params = api_client._session.get.call_args.kwargs["params"]
+
+        assert url == f"{METOBS_URL}/collections/station/items"
+        assert url.startswith(BASE_URL)
+        assert "dmigw.govcloud.dk" not in url
+        assert not (AUTH_PARAM_NAMES & set(params))
+
     # --- get_forecast tests ---
 
     async def test_get_forecast_success(
@@ -214,6 +270,31 @@ class TestDMIApiClient:
         assert "temperature" in forecast["hourly"][0]
         assert "wind_speed" not in forecast["hourly"][0]
 
+    async def test_get_forecast_uses_no_key_opendata_endpoint(
+        self,
+        api_client: DMIApiClient,
+        mock_forecast_data: dict[str, Any],
+    ) -> None:
+        """Test forecasts use the no-key DMI Open Data endpoint."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=mock_forecast_data)
+        mock_response.raise_for_status = MagicMock()
+
+        mock_context = AsyncMock()
+        mock_context.__aenter__.return_value = mock_response
+        api_client._session.get = MagicMock(return_value=mock_context)
+
+        await api_client.get_forecast(55.6761, 12.5683)
+
+        url = api_client._session.get.call_args.args[0]
+        params = api_client._session.get.call_args.kwargs["params"]
+
+        assert url == f"{FORECAST_URL}/collections/harmonie_dini_sf/position"
+        assert url.startswith(BASE_URL)
+        assert "dmigw.govcloud.dk" not in url
+        assert not (AUTH_PARAM_NAMES & set(params))
+
     # --- test_connection tests ---
 
     async def test_test_connection_success(
@@ -233,6 +314,13 @@ class TestDMIApiClient:
         result = await api_client.test_connection()
 
         assert result is True
+        url = api_client._session.get.call_args.args[0]
+        params = api_client._session.get.call_args.kwargs["params"]
+
+        assert url == f"{METOBS_URL}/collections/station/items"
+        assert url.startswith(BASE_URL)
+        assert "dmigw.govcloud.dk" not in url
+        assert not (AUTH_PARAM_NAMES & set(params))
 
     async def test_test_connection_failure(
         self,
@@ -320,6 +408,19 @@ class TestDMIApiClient:
 
         with pytest.raises(CannotConnect):
             await api_client.get_stations()
+
+    async def test_request_rejects_auth_query_params(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test authenticated query params are rejected before any request is sent."""
+        with pytest.raises(CannotConnect, match="Authenticated DMI query parameters"):
+            await api_client._request(
+                f"{METOBS_URL}/collections/station/items",
+                {"limit": 1, "api-key": "secret"},
+            )
+
+        api_client._session.get.assert_not_called()
 
     async def test_client_response_error_other_status(
         self,
