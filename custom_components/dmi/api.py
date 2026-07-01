@@ -174,11 +174,7 @@ class DMIApiClient:
                 existing["parameterId"] = merged_parameter_ids
 
         return [
-            {
-                key: value
-                for key, value in station.items()
-                if key != "_sort_key"
-            }
+            {key: value for key, value in station.items() if key != "_sort_key"}
             for station in stations_by_id.values()
         ]
 
