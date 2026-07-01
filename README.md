@@ -91,7 +91,7 @@ Depending on what the selected station reports, you may get sensors for:
 
 ## API Information
 
-This integration uses DMI's Open Data API at `opendataapi.dmi.dk`. The supported endpoints are open and require no authentication.
+This integration uses DMI's Open Data API at `opendataapi.dmi.dk`. The API is completely open and requires no authentication.
 
 ### Data Sources
 
