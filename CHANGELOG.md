@@ -1,3 +1,17 @@
+# [1.1.0](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.0.1...v1.1.0) (2026-07-02)
+
+
+### Bug Fixes
+
+* **caching:** keep cached data on refresh failures ([#12](https://github.com/aleksanderbl29/dmi-homeassistant/issues/12)) ([7d6c18f](https://github.com/aleksanderbl29/dmi-homeassistant/commit/7d6c18f01ffeff645b07161af55af574150d73f6))
+* **dmi:** preserve cached data on upstream failures ([bab5d78](https://github.com/aleksanderbl29/dmi-homeassistant/commit/bab5d781af991607cfde8c55cd5961c9898bf230))
+* retain cached DMI data on refresh failures ([8a9b60b](https://github.com/aleksanderbl29/dmi-homeassistant/commit/8a9b60b30df9fab8c8f6af90a23f386b320d9fbb))
+
+
+### Features
+
+* **dmi:** add diagnostic last successful update sensor ([9d772b3](https://github.com/aleksanderbl29/dmi-homeassistant/commit/9d772b398676468f17fd3c04f0facece5647cf6e))
+
 ## [1.0.1](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.0.0...v1.0.1) (2026-07-01)
 
 
