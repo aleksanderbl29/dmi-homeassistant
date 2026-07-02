@@ -226,6 +226,24 @@ class TestDMIDataUpdateCoordinator:
 
         assert "Connection error" in str(exc_info.value)
 
+    async def test_async_update_data_connection_error_uses_cached_data(
+        self,
+        coordinator: DMIDataUpdateCoordinator,
+        mock_api_client: MagicMock,
+    ) -> None:
+        """Test cached data is kept on connection error after initial success."""
+        cached_data = {
+            "observations": {"temp_dry": {"value": 15.5, "observed": "2024-01-15T12:00:00Z"}},
+            "forecast": None,
+            "last_updated": "cached",
+        }
+        coordinator.data = cached_data
+        mock_api_client.get_observations.side_effect = CannotConnect("Connection failed")
+
+        data = await coordinator._async_update_data()
+
+        assert data is cached_data
+
     async def test_async_update_data_timeout(
         self,
         coordinator: DMIDataUpdateCoordinator,
@@ -238,6 +256,24 @@ class TestDMIDataUpdateCoordinator:
             await coordinator._async_update_data()
 
         assert "Timeout" in str(exc_info.value)
+
+    async def test_async_update_data_timeout_uses_cached_data(
+        self,
+        coordinator: DMIDataUpdateCoordinator,
+        mock_api_client: MagicMock,
+    ) -> None:
+        """Test cached data is kept on timeout after initial success."""
+        cached_data = {
+            "observations": {"temp_dry": {"value": 15.5, "observed": "2024-01-15T12:00:00Z"}},
+            "forecast": None,
+            "last_updated": "cached",
+        }
+        coordinator.data = cached_data
+        mock_api_client.get_observations.side_effect = TimeoutError("Timeout")
+
+        data = await coordinator._async_update_data()
+
+        assert data is cached_data
 
     def test_coordinator_name(
         self,

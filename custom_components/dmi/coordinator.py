@@ -169,6 +169,21 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return self.data
             raise UpdateFailed(f"Rate limit exceeded, will retry after cooldown: {err}") from err
         except CannotConnect as err:
+            if self.data is not None:
+                _LOGGER.warning(
+                    "Failed to refresh DMI data for %s due to a connection error; "
+                    "continuing to serve cached data: %s",
+                    self.station_id,
+                    err,
+                )
+                return self.data
             raise UpdateFailed(f"Connection error: {err}") from err
         except TimeoutError as err:
+            if self.data is not None:
+                _LOGGER.warning(
+                    "Timed out refreshing DMI data for %s; continuing to serve cached data: %s",
+                    self.station_id,
+                    err,
+                )
+                return self.data
             raise UpdateFailed(f"Timeout fetching data: {err}") from err
