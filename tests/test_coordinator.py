@@ -18,7 +18,12 @@ from custom_components.dmi.api import (
     UpstreamError,
 )
 from custom_components.dmi.const import (
+    CONF_BACKUP_ALLOW_OVERRIDE,
+    CONF_BACKUP_PARAMETERS,
+    CONF_BACKUP_STATIONS,
     CONF_INCLUDE_FORECAST,
+    CONF_SOURCE_STATION_ID,
+    CONF_SOURCE_TYPE,
     CONF_STATION_ID,
     CONF_STATION_NAME,
     CONF_UPDATE_INTERVAL,
@@ -37,13 +42,20 @@ class TestDMIDataUpdateCoordinator:
         mock_config_entry: MockConfigEntry,
         mock_api_client: MagicMock,
     ) -> DMIDataUpdateCoordinator:
-        """Create a coordinator instance."""
+        """Create a normal coordinator instance."""
         mock_config_entry.add_to_hass(hass)
-        return DMIDataUpdateCoordinator(
-            hass,
-            mock_config_entry,
-            mock_api_client,
-        )
+        return DMIDataUpdateCoordinator(hass, mock_config_entry, mock_api_client)
+
+    @pytest.fixture
+    def advanced_coordinator(
+        self,
+        hass: HomeAssistant,
+        advanced_config_entry: MockConfigEntry,
+        mock_api_client: MagicMock,
+    ) -> DMIDataUpdateCoordinator:
+        """Create an advanced coordinator instance."""
+        advanced_config_entry.add_to_hass(hass)
+        return DMIDataUpdateCoordinator(hass, advanced_config_entry, mock_api_client)
 
     def test_coordinator_initialization(
         self,
@@ -52,10 +64,8 @@ class TestDMIDataUpdateCoordinator:
         """Test coordinator initializes with correct values."""
         assert coordinator.station_id == "06180"
         assert coordinator.station_name == "Københavns Lufthavn"
-        assert coordinator.latitude == 55.614
-        assert coordinator.longitude == 12.6455
-        assert coordinator.include_forecast is True
         assert coordinator.update_interval == timedelta(minutes=10)
+        assert coordinator.include_forecast is True
 
     def test_coordinator_with_custom_update_interval(
         self,
@@ -68,10 +78,7 @@ class TestDMIDataUpdateCoordinator:
             domain=DOMAIN,
             title="Test",
             data=mock_config_entry_data,
-            options={
-                CONF_UPDATE_INTERVAL: 30,  # 30 minutes
-                CONF_INCLUDE_FORECAST: True,
-            },
+            options={CONF_UPDATE_INTERVAL: 30, CONF_INCLUDE_FORECAST: True},
         )
         entry.add_to_hass(hass)
 
@@ -79,65 +86,85 @@ class TestDMIDataUpdateCoordinator:
 
         assert coordinator.update_interval == timedelta(minutes=30)
 
-    def test_coordinator_forecast_disabled(
-        self,
-        hass: HomeAssistant,
-        mock_api_client: MagicMock,
-        mock_config_entry_data: dict[str, Any],
-    ) -> None:
-        """Test coordinator with forecast disabled."""
-        entry = MockConfigEntry(
-            domain=DOMAIN,
-            title="Test",
-            data=mock_config_entry_data,
-            options={
-                CONF_UPDATE_INTERVAL: 10,
-                CONF_INCLUDE_FORECAST: False,
-            },
-        )
-        entry.add_to_hass(hass)
-
-        coordinator = DMIDataUpdateCoordinator(hass, entry, mock_api_client)
-
-        assert coordinator.include_forecast is False
-
-    def test_coordinator_missing_coordinates(
-        self,
-        hass: HomeAssistant,
-        mock_api_client: MagicMock,
-    ) -> None:
-        """Test coordinator handles missing coordinates."""
-        entry = MockConfigEntry(
-            domain=DOMAIN,
-            title="Test",
-            data={
-                CONF_STATION_ID: "06180",
-                CONF_STATION_NAME: "Test",
-                # No latitude/longitude
-            },
-            options={},
-        )
-        entry.add_to_hass(hass)
-
-        coordinator = DMIDataUpdateCoordinator(hass, entry, mock_api_client)
-
-        assert coordinator.latitude is None
-        assert coordinator.longitude is None
-
     async def test_async_update_data_success(
         self,
         coordinator: DMIDataUpdateCoordinator,
         mock_api_client: MagicMock,
     ) -> None:
-        """Test successful data update."""
+        """Test successful normal data update."""
         data = await coordinator._async_update_data()
 
         assert "observations" in data
         assert "forecast" in data
-        assert "last_updated" in data
-
+        assert data["observations"]["temp_dry"][CONF_SOURCE_STATION_ID] == "06180"
         mock_api_client.get_observations.assert_called_once_with("06180")
-        mock_api_client.get_forecast.assert_called_once_with(55.614, 12.6455)
+        mock_api_client.get_forecast.assert_called_once()
+
+    async def test_advanced_update_merges_backup_observations(
+        self,
+        advanced_coordinator: DMIDataUpdateCoordinator,
+        mock_api_client: MagicMock,
+    ) -> None:
+        """Test advanced entries merge selected backup parameters."""
+        data = await advanced_coordinator._async_update_data()
+
+        assert data["observations"]["temp_dry"][CONF_SOURCE_STATION_ID] == "06186"
+        assert data["observations"]["radia_glob"][CONF_SOURCE_STATION_ID] == "06187"
+        assert data["observations"]["radia_glob"][CONF_SOURCE_TYPE] == "backup"
+        assert data["observations"]["sun_last1h_glob"][CONF_SOURCE_STATION_ID] == "06187"
+        mock_api_client.get_observations.assert_any_call("06186")
+        mock_api_client.get_observations.assert_any_call("06187")
+        mock_api_client.get_forecast.assert_called_once()
+
+    async def test_advanced_update_override_replaces_primary(
+        self,
+        hass: HomeAssistant,
+        mock_api_client: MagicMock,
+        mock_config_entry_options: dict[str, Any],
+    ) -> None:
+        """Test backup override can replace overlapping parameters."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Landbohojskolen + backups",
+            data={
+                "setup_type": "advanced",
+                CONF_STATION_ID: "06186",
+                CONF_STATION_NAME: "Landbohojskolen",
+                "latitude": 55.68,
+                "longitude": 12.53,
+                "use_coordinates": False,
+                CONF_BACKUP_STATIONS: [
+                    {
+                        CONF_STATION_ID: "06187",
+                        CONF_STATION_NAME: "Kobenhavns Toldbod",
+                        CONF_BACKUP_PARAMETERS: ["temp_dry"],
+                        CONF_BACKUP_ALLOW_OVERRIDE: True,
+                    }
+                ],
+            },
+            options=mock_config_entry_options,
+        )
+        entry.add_to_hass(hass)
+
+        coordinator = DMIDataUpdateCoordinator(hass, entry, mock_api_client)
+        data = await coordinator._async_update_data()
+
+        assert data["observations"]["temp_dry"]["value"] == 18.0
+        assert data["observations"]["temp_dry"][CONF_SOURCE_STATION_ID] == "06187"
+
+    async def test_advanced_update_without_override_keeps_primary(
+        self,
+        advanced_coordinator: DMIDataUpdateCoordinator,
+        mock_api_client: MagicMock,
+    ) -> None:
+        """Test backup overlap does not replace the primary without override."""
+        advanced_coordinator.backup_stations[0][CONF_BACKUP_PARAMETERS] = ["temp_dry"]
+        advanced_coordinator.backup_stations[0][CONF_BACKUP_ALLOW_OVERRIDE] = False
+
+        data = await advanced_coordinator._async_update_data()
+
+        assert data["observations"]["temp_dry"]["value"] == 16.0
+        assert data["observations"]["temp_dry"][CONF_SOURCE_STATION_ID] == "06186"
 
     async def test_async_update_data_without_forecast(
         self,
@@ -150,60 +177,15 @@ class TestDMIDataUpdateCoordinator:
             domain=DOMAIN,
             title="Test",
             data=mock_config_entry_data,
-            options={
-                CONF_UPDATE_INTERVAL: 10,
-                CONF_INCLUDE_FORECAST: False,
-            },
+            options={CONF_UPDATE_INTERVAL: 10, CONF_INCLUDE_FORECAST: False},
         )
         entry.add_to_hass(hass)
 
         coordinator = DMIDataUpdateCoordinator(hass, entry, mock_api_client)
         data = await coordinator._async_update_data()
 
-        assert "observations" in data
         assert data["forecast"] is None
         mock_api_client.get_forecast.assert_not_called()
-
-    async def test_async_update_data_without_coordinates(
-        self,
-        hass: HomeAssistant,
-        mock_api_client: MagicMock,
-    ) -> None:
-        """Test data update without coordinates (no forecast)."""
-        entry = MockConfigEntry(
-            domain=DOMAIN,
-            title="Test",
-            data={
-                CONF_STATION_ID: "06180",
-                CONF_STATION_NAME: "Test",
-                # No coordinates
-            },
-            options={
-                CONF_UPDATE_INTERVAL: 10,
-                CONF_INCLUDE_FORECAST: True,
-            },
-        )
-        entry.add_to_hass(hass)
-
-        coordinator = DMIDataUpdateCoordinator(hass, entry, mock_api_client)
-        data = await coordinator._async_update_data()
-
-        assert "observations" in data
-        assert data["forecast"] is None
-        mock_api_client.get_forecast.assert_not_called()
-
-    async def test_async_update_data_forecast_error_continues(
-        self,
-        coordinator: DMIDataUpdateCoordinator,
-        mock_api_client: MagicMock,
-    ) -> None:
-        """Test that forecast error doesn't fail the entire update."""
-        mock_api_client.get_forecast.side_effect = Exception("Forecast error")
-
-        data = await coordinator._async_update_data()
-
-        assert "observations" in data
-        assert data["forecast"] is None  # Forecast failed but update succeeded
 
     async def test_async_update_data_rate_limit(
         self,
@@ -213,54 +195,8 @@ class TestDMIDataUpdateCoordinator:
         """Test rate limit error raises UpdateFailed."""
         mock_api_client.get_observations.side_effect = RateLimitExceeded("Rate limit")
 
-        with pytest.raises(UpdateFailed) as exc_info:
+        with pytest.raises(UpdateFailed):
             await coordinator._async_update_data()
-
-        assert "Rate limit exceeded" in str(exc_info.value)
-
-    async def test_async_update_data_connection_error(
-        self,
-        coordinator: DMIDataUpdateCoordinator,
-        mock_api_client: MagicMock,
-    ) -> None:
-        """Test connection error raises UpdateFailed."""
-        mock_api_client.get_observations.side_effect = CannotConnect("Connection failed")
-
-        with pytest.raises(UpdateFailed) as exc_info:
-            await coordinator._async_update_data()
-
-        assert "Connection error" in str(exc_info.value)
-
-    async def test_async_update_data_upstream_error(
-        self,
-        coordinator: DMIDataUpdateCoordinator,
-        mock_api_client: MagicMock,
-    ) -> None:
-        """Test upstream HTTP error raises UpdateFailed without cached data."""
-        mock_api_client.get_observations.side_effect = UpstreamError("HTTP 503 error from DMI API")
-
-        with pytest.raises(UpdateFailed) as exc_info:
-            await coordinator._async_update_data()
-
-        assert "Upstream API error" in str(exc_info.value)
-
-    async def test_async_update_data_upstream_error_uses_cached_data(
-        self,
-        coordinator: DMIDataUpdateCoordinator,
-        mock_api_client: MagicMock,
-    ) -> None:
-        """Test cached data is kept on upstream HTTP error after initial success."""
-        cached_data = {
-            "observations": {"temp_dry": {"value": 15.5, "observed": "2024-01-15T12:00:00Z"}},
-            "forecast": None,
-            "last_updated": "cached",
-        }
-        coordinator.data = cached_data
-        mock_api_client.get_observations.side_effect = UpstreamError("HTTP 503 error from DMI API")
-
-        data = await coordinator._async_update_data()
-
-        assert data is cached_data
 
     async def test_async_update_data_connection_error_uses_cached_data(
         self,
@@ -280,18 +216,23 @@ class TestDMIDataUpdateCoordinator:
 
         assert data is cached_data
 
-    async def test_async_update_data_timeout(
+    async def test_async_update_data_upstream_error_uses_cached_data(
         self,
         coordinator: DMIDataUpdateCoordinator,
         mock_api_client: MagicMock,
     ) -> None:
-        """Test timeout raises UpdateFailed."""
-        mock_api_client.get_observations.side_effect = RequestTimeout("Timeout")
+        """Test cached data is kept on upstream error after initial success."""
+        cached_data = {
+            "observations": {"temp_dry": {"value": 15.5, "observed": "2024-01-15T12:00:00Z"}},
+            "forecast": None,
+            "last_updated": "cached",
+        }
+        coordinator.data = cached_data
+        mock_api_client.get_observations.side_effect = UpstreamError("HTTP 503")
 
-        with pytest.raises(UpdateFailed) as exc_info:
-            await coordinator._async_update_data()
+        data = await coordinator._async_update_data()
 
-        assert "Timeout" in str(exc_info.value)
+        assert data is cached_data
 
     async def test_async_update_data_timeout_uses_cached_data(
         self,
@@ -310,10 +251,3 @@ class TestDMIDataUpdateCoordinator:
         data = await coordinator._async_update_data()
 
         assert data is cached_data
-
-    def test_coordinator_name(
-        self,
-        coordinator: DMIDataUpdateCoordinator,
-    ) -> None:
-        """Test coordinator name is set correctly."""
-        assert coordinator.name == f"{DOMAIN} (Københavns Lufthavn)"

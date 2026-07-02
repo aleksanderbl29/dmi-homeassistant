@@ -21,14 +21,24 @@ from .api import (
     UpstreamError,
 )
 from .const import (
+    CONF_BACKUP_ALLOW_OVERRIDE,
+    CONF_BACKUP_PARAMETERS,
+    CONF_BACKUP_STATIONS,
     CONF_INCLUDE_FORECAST,
     CONF_LATITUDE,
     CONF_LONGITUDE,
+    CONF_SETUP_TYPE,
+    CONF_SOURCE_STATION_ID,
+    CONF_SOURCE_STATION_NAME,
+    CONF_SOURCE_TYPE,
     CONF_STATION_ID,
     CONF_STATION_NAME,
     CONF_UPDATE_INTERVAL,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
+    SETUP_TYPE_ADVANCED,
+    SOURCE_TYPE_BACKUP,
+    SOURCE_TYPE_PRIMARY,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -63,6 +73,10 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.api = api_client
         self.station_id: str = str(config_entry.data.get(CONF_STATION_ID) or "")
         self.station_name: str = str(config_entry.data.get(CONF_STATION_NAME) or "DMI Weather")
+        self.setup_type: str = str(config_entry.data.get(CONF_SETUP_TYPE) or "normal")
+        self.backup_stations: list[dict[str, Any]] = list(
+            config_entry.data.get(CONF_BACKUP_STATIONS, [])
+        )
 
         # Handle coordinates - ensure they're float or None
         lat = config_entry.data.get(CONF_LATITUDE)
@@ -138,7 +152,16 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self.longitude,
                 )
                 # Fetch observations
-                observations = await self.api.get_observations(self.station_id)
+                primary_observations = await self.api.get_observations(self.station_id)
+                observations = self._annotate_observations(
+                    primary_observations,
+                    station_id=self.station_id,
+                    station_name=self.station_name,
+                    source_type=SOURCE_TYPE_PRIMARY,
+                )
+
+                if self.setup_type == SETUP_TYPE_ADVANCED:
+                    await self._async_merge_backup_observations(observations)
 
                 # Fetch forecast if coordinates are available and enabled.
                 # Stagger this slightly after the observations call so the
@@ -229,3 +252,50 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if cached_data is not None:
                 return cached_data
             raise UpdateFailed(f"Timeout fetching data: {err}") from err
+
+    def _annotate_observations(
+        self,
+        observations: dict[str, Any],
+        *,
+        station_id: str,
+        station_name: str,
+        source_type: str,
+    ) -> dict[str, Any]:
+        """Attach source metadata to observations."""
+        annotated: dict[str, Any] = {}
+        for parameter_id, observation in observations.items():
+            annotated[parameter_id] = {
+                **observation,
+                CONF_SOURCE_STATION_ID: station_id,
+                CONF_SOURCE_STATION_NAME: station_name,
+                CONF_SOURCE_TYPE: source_type,
+            }
+        return annotated
+
+    async def _async_merge_backup_observations(self, observations: dict[str, Any]) -> None:
+        """Merge selected observations from backup stations into the primary data."""
+        for backup in self.backup_stations:
+            backup_station_id = str(backup.get(CONF_STATION_ID) or "")
+            backup_station_name = str(backup.get(CONF_STATION_NAME) or backup_station_id)
+            allow_override = bool(backup.get(CONF_BACKUP_ALLOW_OVERRIDE, False))
+            selected_parameters = {
+                str(parameter_id)
+                for parameter_id in backup.get(CONF_BACKUP_PARAMETERS, [])
+                if parameter_id
+            }
+            if not backup_station_id or not selected_parameters:
+                continue
+
+            backup_observations = self._annotate_observations(
+                await self.api.get_observations(backup_station_id),
+                station_id=backup_station_id,
+                station_name=backup_station_name,
+                source_type=SOURCE_TYPE_BACKUP,
+            )
+
+            for parameter_id in selected_parameters:
+                backup_value = backup_observations.get(parameter_id)
+                if backup_value is None:
+                    continue
+                if allow_override or parameter_id not in observations:
+                    observations[parameter_id] = backup_value

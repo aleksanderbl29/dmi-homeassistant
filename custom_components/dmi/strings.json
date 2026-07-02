@@ -1,6 +1,13 @@
 {
   "config": {
     "step": {
+      "user": {
+        "title": "DMI Weather Setup",
+        "menu_options": {
+          "station": "Normal station setup",
+          "advanced_primary": "Advanced composite setup"
+        }
+      },
       "station": {
         "title": "DMI Weather Setup",
         "description": "Choose a weather station or use your Home Assistant location for forecasts.",
@@ -8,11 +15,45 @@
           "station_id": "Weather Station",
           "use_coordinates": "Use Home Assistant coordinates for forecasts"
         }
+      },
+      "advanced_primary": {
+        "title": "Advanced Composite Setup",
+        "description": "Choose the primary station for the composite weather source.",
+        "data": {
+          "station_id": "Primary station",
+          "use_coordinates": "Use Home Assistant coordinates for forecasts"
+        }
+      },
+      "advanced_backup_count": {
+        "title": "Backup Station Count",
+        "data": {
+          "backup_station_count": "Number of backup stations"
+        }
+      },
+      "advanced_backup_station": {
+        "title": "Backup Station",
+        "description": "Choose backup station {backup_index}.",
+        "data": {
+          "station_id": "Backup station",
+          "allow_override": "Allow backup station to override the primary station"
+        }
+      },
+      "advanced_backup_parameters": {
+        "title": "Backup Parameters",
+        "description": "Choose parameters from {backup_station} for backup station {backup_index}.",
+        "data": {
+          "parameters": "Backup parameters"
+        }
       }
     },
     "error": {
       "cannot_connect": "Failed to connect to DMI API",
-      "unknown": "Unexpected error"
+      "unknown": "Unexpected error",
+      "invalid_station": "Selected station is invalid",
+      "backup_matches_primary": "Backup station cannot be the same as the primary station",
+      "duplicate_backup_station": "This backup station is already selected",
+      "no_backup_parameters": "No supported backup parameters are available for this station",
+      "no_backup_parameters_selected": "Select at least one backup parameter"
     },
     "abort": {
       "already_configured": "This station is already configured"
@@ -31,40 +72,44 @@
   },
   "entity": {
     "sensor": {
-      "temp_dry": {
-        "name": "Temperature"
-      },
-      "temp_dew": {
-        "name": "Dew Point"
-      },
-      "humidity": {
-        "name": "Humidity"
-      },
-      "pressure_at_sea": {
-        "name": "Pressure"
-      },
-      "wind_speed": {
-        "name": "Wind Speed"
-      },
-      "wind_max": {
-        "name": "Wind Gust"
-      },
-      "wind_dir": {
-        "name": "Wind Direction"
-      },
-      "precip_past1h": {
-        "name": "Precipitation"
-      },
-      "visibility": {
-        "name": "Visibility"
-      },
-      "cloud_cover": {
-        "name": "Cloud Cover"
-      },
-      "radia_glob": {
-        "name": "Solar Radiation"
-      }
+      "temp_dry": { "name": "Temperature" },
+      "temp_dew": { "name": "Dew Point" },
+      "temp_mean_past1h": { "name": "Temperature Last Hour" },
+      "temp_max_past1h": { "name": "Temperature Max Last Hour" },
+      "temp_min_past1h": { "name": "Temperature Min Last Hour" },
+      "temp_max_past12h": { "name": "Temperature Max Last 12 Hours" },
+      "temp_min_past12h": { "name": "Temperature Min Last 12 Hours" },
+      "temp_grass": { "name": "Grass Temperature" },
+      "temp_grass_mean_past1h": { "name": "Grass Temperature Last Hour" },
+      "temp_grass_max_past1h": { "name": "Grass Temperature Max Last Hour" },
+      "temp_grass_min_past1h": { "name": "Grass Temperature Min Last Hour" },
+      "humidity": { "name": "Humidity" },
+      "humidity_past1h": { "name": "Humidity Last Hour" },
+      "pressure": { "name": "Pressure" },
+      "pressure_at_sea": { "name": "Pressure At Sea" },
+      "wind_speed": { "name": "Wind Speed" },
+      "wind_speed_past1h": { "name": "Wind Speed Last Hour" },
+      "wind_max": { "name": "Wind Gust" },
+      "wind_min": { "name": "Wind Minimum" },
+      "wind_min_past1h": { "name": "Wind Minimum Last Hour" },
+      "wind_max_per10min_past1h": { "name": "Wind Max Per 10 Minutes Last Hour" },
+      "wind_gust_always_past1h": { "name": "Wind Gust Last Hour" },
+      "wind_dir": { "name": "Wind Direction" },
+      "wind_dir_past1h": { "name": "Wind Direction Last Hour" },
+      "precip_past1min": { "name": "Precipitation Last Minute" },
+      "precip_past10min": { "name": "Precipitation Last 10 Minutes" },
+      "precip_past1h": { "name": "Precipitation Last Hour" },
+      "precip_dur_past10min": { "name": "Precipitation Duration Last 10 Minutes" },
+      "precip_dur_past1h": { "name": "Precipitation Duration Last Hour" },
+      "visibility": { "name": "Visibility" },
+      "visib_mean_last10min": { "name": "Visibility Last 10 Minutes" },
+      "cloud_cover": { "name": "Cloud Cover" },
+      "cloud_height": { "name": "Cloud Height" },
+      "weather": { "name": "Weather" },
+      "radia_glob": { "name": "Solar Radiation" },
+      "radia_glob_past1h": { "name": "Solar Radiation Last Hour" },
+      "sun_last10min_glob": { "name": "Sunshine Last 10 Minutes" },
+      "sun_last1h_glob": { "name": "Sunshine Last Hour" }
     }
   }
 }
-

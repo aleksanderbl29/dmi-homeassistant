@@ -26,9 +26,11 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import (
     ATTRIBUTION,
     CONDITION_MAP,
+    CONF_SETUP_TYPE,
     CONF_STATION_ID,
     CONF_STATION_NAME,
     DOMAIN,
+    SETUP_TYPE_ADVANCED,
 )
 from .coordinator import DMIDataUpdateCoordinator
 
@@ -69,6 +71,7 @@ class DMIWeather(CoordinatorEntity[DMIDataUpdateCoordinator], WeatherEntity):
         self._config_entry = config_entry
         self._station_id = str(config_entry.data.get(CONF_STATION_ID) or "")
         self._station_name = str(config_entry.data.get(CONF_STATION_NAME) or "DMI Weather")
+        self._setup_type = str(config_entry.data.get(CONF_SETUP_TYPE) or "normal")
 
         self._attr_unique_id = f"{config_entry.entry_id}_weather"
         self._supports_forecast = bool(
@@ -95,7 +98,11 @@ class DMIWeather(CoordinatorEntity[DMIDataUpdateCoordinator], WeatherEntity):
             identifiers={(DOMAIN, self._config_entry.entry_id)},
             name=self._station_name,
             manufacturer="Danish Meteorological Institute",
-            model=f"Weather Station {self._station_id}",
+            model=(
+                f"Composite Weather Station {self._station_id}"
+                if self._setup_type == SETUP_TYPE_ADVANCED
+                else f"Weather Station {self._station_id}"
+            ),
             configuration_url="https://www.dmi.dk",
         )
 

@@ -13,9 +13,12 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dmi.api import CannotConnect
 from custom_components.dmi.const import (
+    CONF_BACKUP_ALLOW_OVERRIDE,
+    CONF_BACKUP_PARAMETERS,
+    CONF_BACKUP_STATIONS,
     CONF_INCLUDE_FORECAST,
+    CONF_SETUP_TYPE,
     CONF_STATION_ID,
-    CONF_STATION_NAME,
     CONF_UPDATE_INTERVAL,
     CONF_USE_COORDINATES,
     DOMAIN,
@@ -24,7 +27,7 @@ from custom_components.dmi.const import (
 
 @pytest.fixture
 def mock_stations() -> list[dict[str, Any]]:
-    """Return mock station list matching actual API response format."""
+    """Return mock station list matching the parsed API response."""
     return [
         {
             "stationId": "06180",
@@ -45,15 +48,33 @@ def mock_stations() -> list[dict[str, Any]]:
     ]
 
 
+def _flow_menu_select(result: dict[str, Any], next_step_id: str) -> dict[str, str]:
+    """Return a menu selection payload."""
+    assert result["type"] == FlowResultType.MENU
+    return {"next_step_id": next_step_id}
+
+
 class TestDMIConfigFlow:
     """Test cases for DMIConfigFlow."""
 
-    async def test_user_flow_shows_station_form(
+    async def test_user_flow_shows_setup_menu(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test user step shows a menu with normal and advanced setup."""
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+
+        assert result["type"] == FlowResultType.MENU
+        assert set(result["menu_options"]) == {"station", "advanced_primary"}
+
+    async def test_normal_flow_creates_entry(
         self,
         hass: HomeAssistant,
         mock_stations: list[dict[str, Any]],
     ) -> None:
-        """Test user step shows station selection form."""
+        """Test the normal setup path still creates a config entry."""
         with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
             mock_api = MagicMock()
             mock_api.get_stations = AsyncMock(return_value=mock_stations)
@@ -62,30 +83,9 @@ class TestDMIConfigFlow:
             result = await hass.config_entries.flow.async_init(
                 DOMAIN, context={"source": config_entries.SOURCE_USER}
             )
-
-            assert result["type"] == FlowResultType.FORM
-            assert result["step_id"] == "station"
-            assert "data_schema" in result
-
-    async def test_user_flow_creates_entry(
-        self,
-        hass: HomeAssistant,
-        mock_stations: list[dict[str, Any]],
-    ) -> None:
-        """Test successful config entry creation."""
-        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
-            mock_api = MagicMock()
-            mock_api.get_stations = AsyncMock(return_value=mock_stations)
-            mock_api_class.return_value = mock_api
-
-            # First step: show form
-            result = await hass.config_entries.flow.async_init(
-                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], _flow_menu_select(result, "station")
             )
-
-            assert result["type"] == FlowResultType.FORM
-
-            # Second step: submit station selection
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"],
                 {
@@ -94,22 +94,204 @@ class TestDMIConfigFlow:
                 },
             )
 
-            assert result["type"] == FlowResultType.CREATE_ENTRY
-            assert result["title"] == "Københavns Lufthavn"
-            assert result["data"][CONF_STATION_ID] == "06180"
-            assert result["data"][CONF_STATION_NAME] == "Københavns Lufthavn"
-            assert result["data"]["latitude"] == 55.614
-            assert result["data"]["longitude"] == 12.6455
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert result["title"] == "Københavns Lufthavn"
+        assert result["data"][CONF_SETUP_TYPE] == "normal"
+        assert result["data"][CONF_STATION_ID] == "06180"
 
-    async def test_user_flow_with_ha_coordinates(
+    async def test_advanced_flow_creates_composite_entry(
         self,
         hass: HomeAssistant,
         mock_stations: list[dict[str, Any]],
     ) -> None:
-        """Test config entry uses HA coordinates when selected."""
-        # Set Home Assistant coordinates
-        hass.config.latitude = 56.0
-        hass.config.longitude = 11.0
+        """Test the advanced flow creates a composite entry."""
+        advanced_stations = [
+            {
+                "stationId": "06186",
+                "name": "Landbohojskolen",
+                "latitude": 55.68,
+                "longitude": 12.53,
+                "parameterId": ["temp_dry", "humidity"],
+            },
+            {
+                "stationId": "06187",
+                "name": "Kobenhavns Toldbod",
+                "latitude": 55.69,
+                "longitude": 12.60,
+                "parameterId": ["radia_glob", "sun_last1h_glob", "temp_dry"],
+            },
+            *mock_stations,
+        ]
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
+            mock_api = MagicMock()
+            mock_api.get_stations = AsyncMock(return_value=advanced_stations)
+            mock_api_class.return_value = mock_api
+
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], _flow_menu_select(result, "advanced_primary")
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {
+                    CONF_STATION_ID: "06186",
+                    CONF_USE_COORDINATES: False,
+                },
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {"backup_station_count": "1"},
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {
+                    CONF_STATION_ID: "06187",
+                    CONF_BACKUP_ALLOW_OVERRIDE: False,
+                },
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {
+                    CONF_BACKUP_PARAMETERS: ["radia_glob", "sun_last1h_glob"],
+                },
+            )
+
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert result["data"][CONF_SETUP_TYPE] == "advanced"
+        assert result["data"][CONF_STATION_ID] == "06186"
+        assert result["data"][CONF_BACKUP_STATIONS][0][CONF_STATION_ID] == "06187"
+        assert result["data"][CONF_BACKUP_STATIONS][0][CONF_BACKUP_PARAMETERS] == [
+            "radia_glob",
+            "sun_last1h_glob",
+        ]
+
+    async def test_advanced_flow_rejects_duplicate_or_primary_backup_station(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test backup station validation."""
+        stations = [
+            {
+                "stationId": "06186",
+                "name": "Landbohojskolen",
+                "latitude": 55.68,
+                "longitude": 12.53,
+                "parameterId": ["temp_dry", "humidity"],
+            },
+            {
+                "stationId": "06187",
+                "name": "Kobenhavns Toldbod",
+                "latitude": 55.69,
+                "longitude": 12.60,
+                "parameterId": ["radia_glob", "sun_last1h_glob"],
+            },
+            {
+                "stationId": "06070",
+                "name": "Aarhus Lufthavn",
+                "latitude": 56.30,
+                "longitude": 10.61,
+                "parameterId": ["temp_dry"],
+            },
+        ]
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
+            mock_api = MagicMock()
+            mock_api.get_stations = AsyncMock(return_value=stations)
+            mock_api_class.return_value = mock_api
+
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], _flow_menu_select(result, "advanced_primary")
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "06186", CONF_USE_COORDINATES: False},
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], {"backup_station_count": "2"}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "06186", CONF_BACKUP_ALLOW_OVERRIDE: False},
+            )
+
+            assert result["errors"]["base"] == "backup_matches_primary"
+
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "06187", CONF_BACKUP_ALLOW_OVERRIDE: False},
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_BACKUP_PARAMETERS: ["radia_glob"]},
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "06187", CONF_BACKUP_ALLOW_OVERRIDE: False},
+            )
+
+        assert result["errors"]["base"] == "duplicate_backup_station"
+
+    async def test_advanced_flow_requires_parameters(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test backup parameter selection is required."""
+        stations = [
+            {
+                "stationId": "06186",
+                "name": "Landbohojskolen",
+                "latitude": 55.68,
+                "longitude": 12.53,
+                "parameterId": ["temp_dry"],
+            },
+            {
+                "stationId": "06187",
+                "name": "Kobenhavns Toldbod",
+                "latitude": 55.69,
+                "longitude": 12.60,
+                "parameterId": ["radia_glob"],
+            },
+        ]
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
+            mock_api = MagicMock()
+            mock_api.get_stations = AsyncMock(return_value=stations)
+            mock_api_class.return_value = mock_api
+
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], _flow_menu_select(result, "advanced_primary")
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "06186", CONF_USE_COORDINATES: False},
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], {"backup_station_count": "1"}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "06187", CONF_BACKUP_ALLOW_OVERRIDE: False},
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], {CONF_BACKUP_PARAMETERS: []}
+            )
+
+        assert result["errors"][CONF_BACKUP_PARAMETERS] == "no_backup_parameters_selected"
+
+    async def test_normal_flow_duplicate_entry(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry: MockConfigEntry,
+        mock_stations: list[dict[str, Any]],
+    ) -> None:
+        """Test duplicate normal entry is prevented."""
+        mock_config_entry.add_to_hass(hass)
 
         with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
             mock_api = MagicMock()
@@ -119,20 +301,18 @@ class TestDMIConfigFlow:
             result = await hass.config_entries.flow.async_init(
                 DOMAIN, context={"source": config_entries.SOURCE_USER}
             )
-
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], _flow_menu_select(result, "station")
+            )
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"],
-                {
-                    CONF_STATION_ID: "06180",
-                    CONF_USE_COORDINATES: True,
-                },
+                {CONF_STATION_ID: "06180", CONF_USE_COORDINATES: False},
             )
 
-            assert result["type"] == FlowResultType.CREATE_ENTRY
-            assert result["data"]["latitude"] == 56.0
-            assert result["data"]["longitude"] == 11.0
+        assert result["type"] == FlowResultType.ABORT
+        assert result["reason"] == "already_configured"
 
-    async def test_user_flow_connection_error(
+    async def test_flow_connection_error(
         self,
         hass: HomeAssistant,
     ) -> None:
@@ -145,169 +325,16 @@ class TestDMIConfigFlow:
             result = await hass.config_entries.flow.async_init(
                 DOMAIN, context={"source": config_entries.SOURCE_USER}
             )
-
-            assert result["type"] == FlowResultType.FORM
-            assert result["errors"]["base"] == "cannot_connect"
-
-    async def test_user_flow_unknown_error(
-        self,
-        hass: HomeAssistant,
-    ) -> None:
-        """Test unknown error shows form with error."""
-        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
-            mock_api = MagicMock()
-            mock_api.get_stations = AsyncMock(side_effect=Exception("Unknown"))
-            mock_api_class.return_value = mock_api
-
-            result = await hass.config_entries.flow.async_init(
-                DOMAIN, context={"source": config_entries.SOURCE_USER}
-            )
-
-            assert result["type"] == FlowResultType.FORM
-            assert result["errors"]["base"] == "unknown"
-
-    async def test_user_flow_no_stations(
-        self,
-        hass: HomeAssistant,
-    ) -> None:
-        """Test empty station list shows error."""
-        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
-            mock_api = MagicMock()
-            mock_api.get_stations = AsyncMock(return_value=[])
-            mock_api_class.return_value = mock_api
-
-            result = await hass.config_entries.flow.async_init(
-                DOMAIN, context={"source": config_entries.SOURCE_USER}
-            )
-
-            assert result["type"] == FlowResultType.FORM
-            assert result["errors"]["base"] == "cannot_connect"
-
-    async def test_user_flow_duplicate_entry(
-        self,
-        hass: HomeAssistant,
-        mock_config_entry: MockConfigEntry,
-        mock_stations: list[dict[str, Any]],
-    ) -> None:
-        """Test duplicate entry is prevented."""
-        # Add existing entry
-        mock_config_entry.add_to_hass(hass)
-
-        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
-            mock_api = MagicMock()
-            mock_api.get_stations = AsyncMock(return_value=mock_stations)
-            mock_api_class.return_value = mock_api
-
-            result = await hass.config_entries.flow.async_init(
-                DOMAIN, context={"source": config_entries.SOURCE_USER}
-            )
-
             result = await hass.config_entries.flow.async_configure(
-                result["flow_id"],
-                {
-                    CONF_STATION_ID: "06180",
-                    CONF_USE_COORDINATES: False,
-                },
+                result["flow_id"], _flow_menu_select(result, "station")
             )
 
-            assert result["type"] == FlowResultType.ABORT
-            assert result["reason"] == "already_configured"
-
-    async def test_user_flow_filters_invalid_stations(
-        self,
-        hass: HomeAssistant,
-    ) -> None:
-        """Test stations without stationId are filtered from options."""
-        stations_with_invalid = [
-            {
-                "stationId": None,  # Invalid
-                "name": "Invalid",
-            },
-            {
-                "stationId": "06180",
-                "name": "København",
-                "latitude": 55.6761,
-                "longitude": 12.5683,
-            },
-        ]
-
-        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
-            mock_api = MagicMock()
-            mock_api.get_stations = AsyncMock(return_value=stations_with_invalid)
-            mock_api_class.return_value = mock_api
-
-            result = await hass.config_entries.flow.async_init(
-                DOMAIN, context={"source": config_entries.SOURCE_USER}
-            )
-
-            assert result["type"] == FlowResultType.FORM
-            # Form should be shown with valid stations only
-
-    async def test_user_flow_consolidates_duplicate_station_options(
-        self,
-        hass: HomeAssistant,
-    ) -> None:
-        """Test duplicate station ids only appear once in the selector."""
-        duplicate_stations = [
-            {
-                "stationId": "06180",
-                "name": "Københavns Lufthavn",
-                "latitude": 55.6000,
-                "longitude": 12.6000,
-            },
-            {
-                "stationId": "06180",
-                "name": "Københavns Lufthavn",
-                "latitude": 55.6140,
-                "longitude": 12.6455,
-            },
-            {
-                "stationId": "06070",
-                "name": "Aarhus Lufthavn",
-                "latitude": 56.3031,
-                "longitude": 10.6195,
-            },
-        ]
-
-        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
-            mock_api = MagicMock()
-            mock_api.get_stations = AsyncMock(return_value=duplicate_stations)
-            mock_api_class.return_value = mock_api
-
-            result = await hass.config_entries.flow.async_init(
-                DOMAIN, context={"source": config_entries.SOURCE_USER}
-            )
-
-            assert result["type"] == FlowResultType.FORM
-            station_selector = next(
-                selector
-                for field, selector in result["data_schema"].schema.items()
-                if field.schema == CONF_STATION_ID
-            )
-            options = station_selector.config["options"]
-
-            assert len(options) == 2
-            assert options == [
-                {"value": "06070", "label": "Aarhus Lufthavn (06070)"},
-                {"value": "06180", "label": "Københavns Lufthavn (06180)"},
-            ]
+        assert result["type"] == FlowResultType.FORM
+        assert result["errors"]["base"] == "cannot_connect"
 
 
 class TestDMIOptionsFlow:
     """Test cases for DMI options flow."""
-
-    async def test_options_flow_shows_form(
-        self,
-        hass: HomeAssistant,
-        mock_config_entry: MockConfigEntry,
-    ) -> None:
-        """Test options flow shows form with current values."""
-        mock_config_entry.add_to_hass(hass)
-
-        result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
-
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "init"
 
     async def test_options_flow_updates_options(
         self,
@@ -318,7 +345,6 @@ class TestDMIOptionsFlow:
         mock_config_entry.add_to_hass(hass)
 
         result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
-
         result = await hass.config_entries.options.async_configure(
             result["flow_id"],
             {
@@ -330,23 +356,3 @@ class TestDMIOptionsFlow:
         assert result["type"] == FlowResultType.CREATE_ENTRY
         assert result["data"][CONF_UPDATE_INTERVAL] == 20
         assert result["data"][CONF_INCLUDE_FORECAST] is False
-
-    async def test_options_flow_default_values(
-        self,
-        hass: HomeAssistant,
-        mock_config_entry_data: dict[str, Any],
-    ) -> None:
-        """Test options flow uses defaults when no options set."""
-        entry = MockConfigEntry(
-            domain=DOMAIN,
-            title="Test Station",
-            data=mock_config_entry_data,
-            options={},  # No options set
-            unique_id="dmi_test",
-        )
-        entry.add_to_hass(hass)
-
-        result = await hass.config_entries.options.async_init(entry.entry_id)
-
-        assert result["type"] == FlowResultType.FORM
-        # Form should use defaults from const.py

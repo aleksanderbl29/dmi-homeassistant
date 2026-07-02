@@ -13,11 +13,16 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
+    CONF_SETUP_TYPE,
+    CONF_SOURCE_STATION_ID,
+    CONF_SOURCE_STATION_NAME,
+    CONF_SOURCE_TYPE,
     CONF_STATION_ID,
     CONF_STATION_NAME,
     DOMAIN,
     LAST_FETCH_SENSOR,
     SENSOR_TYPES,
+    SETUP_TYPE_ADVANCED,
 )
 from .coordinator import DMIDataUpdateCoordinator
 
@@ -70,6 +75,7 @@ class DMIBaseSensor(CoordinatorEntity[DMIDataUpdateCoordinator], SensorEntity):
         self._config_entry = config_entry
         self._station_id = str(config_entry.data.get(CONF_STATION_ID) or "")
         self._station_name = str(config_entry.data.get(CONF_STATION_NAME) or "DMI Weather")
+        self._setup_type = str(config_entry.data.get(CONF_SETUP_TYPE) or "normal")
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -78,7 +84,11 @@ class DMIBaseSensor(CoordinatorEntity[DMIDataUpdateCoordinator], SensorEntity):
             identifiers={(DOMAIN, self._config_entry.entry_id)},
             name=self._station_name,
             manufacturer="Danish Meteorological Institute",
-            model=f"Weather Station {self._station_id}",
+            model=(
+                f"Composite Weather Station {self._station_id}"
+                if self._setup_type == SETUP_TYPE_ADVANCED
+                else f"Weather Station {self._station_id}"
+            ),
             configuration_url="https://www.dmi.dk",
         )
 
@@ -128,6 +138,14 @@ class DMISensor(DMIBaseSensor):
             observed = param_data.get("observed")
             if observed:
                 attributes["observation_time"] = observed
+            for source_key in (
+                CONF_SOURCE_STATION_ID,
+                CONF_SOURCE_STATION_NAME,
+                CONF_SOURCE_TYPE,
+            ):
+                source_value = param_data.get(source_key)
+                if source_value is not None:
+                    attributes[source_key] = source_value
 
         # Add last updated timestamp
         last_updated = self.coordinator.data.get("last_updated")

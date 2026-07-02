@@ -26,6 +26,18 @@ CONF_LATITUDE = "latitude"
 CONF_LONGITUDE = "longitude"
 CONF_UPDATE_INTERVAL = "update_interval"
 CONF_INCLUDE_FORECAST = "include_forecast"
+CONF_SETUP_TYPE = "setup_type"
+CONF_BACKUP_STATIONS = "backup_stations"
+CONF_BACKUP_PARAMETERS = "parameters"
+CONF_BACKUP_ALLOW_OVERRIDE = "allow_override"
+CONF_SOURCE_STATION_ID = "source_station_id"
+CONF_SOURCE_STATION_NAME = "source_station_name"
+CONF_SOURCE_TYPE = "source_type"
+
+SETUP_TYPE_NORMAL = "normal"
+SETUP_TYPE_ADVANCED = "advanced"
+SOURCE_TYPE_PRIMARY = "primary"
+SOURCE_TYPE_BACKUP = "backup"
 
 # WMO Weather Code to Home Assistant condition mapping
 CONDITION_MAP: dict[int, str] = {
@@ -59,86 +71,255 @@ CONDITION_MAP: dict[int, str] = {
     99: "hail",
 }
 
-# Sensor type definitions
+
+def _sensor(
+    key: str,
+    name: str,
+    *,
+    native_unit_of_measurement: str | None = None,
+    device_class: SensorDeviceClass | None = None,
+    state_class: SensorStateClass | None = SensorStateClass.MEASUREMENT,
+    icon: str | None = None,
+) -> SensorEntityDescription:
+    """Build a sensor entity description."""
+    return SensorEntityDescription(
+        key=key,
+        name=name,
+        native_unit_of_measurement=native_unit_of_measurement,
+        device_class=device_class,
+        state_class=state_class,
+        icon=icon,
+    )
+
+
 SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
-    SensorEntityDescription(
-        key="temp_dry",
-        name="Temperature",
+    _sensor(
+        "temp_dry",
+        "Temperature",
         native_unit_of_measurement="°C",
         device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
     ),
-    SensorEntityDescription(
-        key="temp_dew",
-        name="Dew Point",
+    _sensor(
+        "temp_dew",
+        "Dew Point",
         native_unit_of_measurement="°C",
         device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
     ),
-    SensorEntityDescription(
-        key="humidity",
-        name="Humidity",
+    _sensor(
+        "temp_mean_past1h",
+        "Temperature Last Hour",
+        native_unit_of_measurement="°C",
+        device_class=SensorDeviceClass.TEMPERATURE,
+    ),
+    _sensor(
+        "temp_max_past1h",
+        "Temperature Max Last Hour",
+        native_unit_of_measurement="°C",
+        device_class=SensorDeviceClass.TEMPERATURE,
+    ),
+    _sensor(
+        "temp_min_past1h",
+        "Temperature Min Last Hour",
+        native_unit_of_measurement="°C",
+        device_class=SensorDeviceClass.TEMPERATURE,
+    ),
+    _sensor(
+        "temp_max_past12h",
+        "Temperature Max Last 12 Hours",
+        native_unit_of_measurement="°C",
+        device_class=SensorDeviceClass.TEMPERATURE,
+    ),
+    _sensor(
+        "temp_min_past12h",
+        "Temperature Min Last 12 Hours",
+        native_unit_of_measurement="°C",
+        device_class=SensorDeviceClass.TEMPERATURE,
+    ),
+    _sensor(
+        "temp_grass",
+        "Grass Temperature",
+        native_unit_of_measurement="°C",
+        device_class=SensorDeviceClass.TEMPERATURE,
+    ),
+    _sensor(
+        "temp_grass_mean_past1h",
+        "Grass Temperature Last Hour",
+        native_unit_of_measurement="°C",
+        device_class=SensorDeviceClass.TEMPERATURE,
+    ),
+    _sensor(
+        "temp_grass_max_past1h",
+        "Grass Temperature Max Last Hour",
+        native_unit_of_measurement="°C",
+        device_class=SensorDeviceClass.TEMPERATURE,
+    ),
+    _sensor(
+        "temp_grass_min_past1h",
+        "Grass Temperature Min Last Hour",
+        native_unit_of_measurement="°C",
+        device_class=SensorDeviceClass.TEMPERATURE,
+    ),
+    _sensor(
+        "humidity",
+        "Humidity",
         native_unit_of_measurement="%",
         device_class=SensorDeviceClass.HUMIDITY,
-        state_class=SensorStateClass.MEASUREMENT,
     ),
-    SensorEntityDescription(
-        key="pressure_at_sea",
-        name="Pressure",
+    _sensor(
+        "humidity_past1h",
+        "Humidity Last Hour",
+        native_unit_of_measurement="%",
+        device_class=SensorDeviceClass.HUMIDITY,
+    ),
+    _sensor(
+        "pressure",
+        "Pressure",
         native_unit_of_measurement="hPa",
         device_class=SensorDeviceClass.ATMOSPHERIC_PRESSURE,
-        state_class=SensorStateClass.MEASUREMENT,
     ),
-    SensorEntityDescription(
-        key="wind_speed",
-        name="Wind Speed",
+    _sensor(
+        "pressure_at_sea",
+        "Pressure At Sea",
+        native_unit_of_measurement="hPa",
+        device_class=SensorDeviceClass.ATMOSPHERIC_PRESSURE,
+    ),
+    _sensor(
+        "wind_speed",
+        "Wind Speed",
         native_unit_of_measurement="m/s",
         device_class=SensorDeviceClass.WIND_SPEED,
-        state_class=SensorStateClass.MEASUREMENT,
     ),
-    SensorEntityDescription(
-        key="wind_max",
-        name="Wind Gust",
+    _sensor(
+        "wind_speed_past1h",
+        "Wind Speed Last Hour",
         native_unit_of_measurement="m/s",
         device_class=SensorDeviceClass.WIND_SPEED,
-        state_class=SensorStateClass.MEASUREMENT,
     ),
-    SensorEntityDescription(
-        key="wind_dir",
-        name="Wind Direction",
+    _sensor(
+        "wind_max",
+        "Wind Gust",
+        native_unit_of_measurement="m/s",
+        device_class=SensorDeviceClass.WIND_SPEED,
+    ),
+    _sensor(
+        "wind_min",
+        "Wind Minimum",
+        native_unit_of_measurement="m/s",
+        device_class=SensorDeviceClass.WIND_SPEED,
+    ),
+    _sensor(
+        "wind_min_past1h",
+        "Wind Minimum Last Hour",
+        native_unit_of_measurement="m/s",
+        device_class=SensorDeviceClass.WIND_SPEED,
+    ),
+    _sensor(
+        "wind_max_per10min_past1h",
+        "Wind Max Per 10 Minutes Last Hour",
+        native_unit_of_measurement="m/s",
+        device_class=SensorDeviceClass.WIND_SPEED,
+    ),
+    _sensor(
+        "wind_gust_always_past1h",
+        "Wind Gust Last Hour",
+        native_unit_of_measurement="m/s",
+        device_class=SensorDeviceClass.WIND_SPEED,
+    ),
+    _sensor(
+        "wind_dir",
+        "Wind Direction",
         native_unit_of_measurement="°",
-        state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:compass-outline",
     ),
-    SensorEntityDescription(
-        key="precip_past1h",
-        name="Precipitation",
+    _sensor(
+        "wind_dir_past1h",
+        "Wind Direction Last Hour",
+        native_unit_of_measurement="°",
+        icon="mdi:compass-outline",
+    ),
+    _sensor(
+        "precip_past1min",
+        "Precipitation Last Minute",
         native_unit_of_measurement="mm",
         device_class=SensorDeviceClass.PRECIPITATION,
-        state_class=SensorStateClass.MEASUREMENT,
     ),
-    SensorEntityDescription(
-        key="visibility",
-        name="Visibility",
+    _sensor(
+        "precip_past10min",
+        "Precipitation Last 10 Minutes",
+        native_unit_of_measurement="mm",
+        device_class=SensorDeviceClass.PRECIPITATION,
+    ),
+    _sensor(
+        "precip_past1h",
+        "Precipitation Last Hour",
+        native_unit_of_measurement="mm",
+        device_class=SensorDeviceClass.PRECIPITATION,
+    ),
+    _sensor(
+        "precip_dur_past10min",
+        "Precipitation Duration Last 10 Minutes",
+        native_unit_of_measurement="min",
+    ),
+    _sensor(
+        "precip_dur_past1h",
+        "Precipitation Duration Last Hour",
+        native_unit_of_measurement="min",
+    ),
+    _sensor(
+        "visibility",
+        "Visibility",
         native_unit_of_measurement="m",
         device_class=SensorDeviceClass.DISTANCE,
-        state_class=SensorStateClass.MEASUREMENT,
     ),
-    SensorEntityDescription(
-        key="cloud_cover",
-        name="Cloud Cover",
+    _sensor(
+        "visib_mean_last10min",
+        "Visibility Last 10 Minutes",
+        native_unit_of_measurement="m",
+        device_class=SensorDeviceClass.DISTANCE,
+    ),
+    _sensor(
+        "cloud_cover",
+        "Cloud Cover",
         native_unit_of_measurement="%",
-        state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:cloud",
     ),
-    SensorEntityDescription(
-        key="radia_glob",
-        name="Solar Radiation",
+    _sensor(
+        "cloud_height",
+        "Cloud Height",
+        native_unit_of_measurement="m",
+        device_class=SensorDeviceClass.DISTANCE,
+        icon="mdi:cloud-outline",
+    ),
+    _sensor("weather", "Weather", icon="mdi:weather-partly-cloudy", state_class=None),
+    _sensor(
+        "radia_glob",
+        "Solar Radiation",
         native_unit_of_measurement="W/m²",
         device_class=SensorDeviceClass.IRRADIANCE,
-        state_class=SensorStateClass.MEASUREMENT,
+    ),
+    _sensor(
+        "radia_glob_past1h",
+        "Solar Radiation Last Hour",
+        native_unit_of_measurement="Wh/m²",
+        icon="mdi:weather-sunny",
+    ),
+    _sensor(
+        "sun_last10min_glob",
+        "Sunshine Last 10 Minutes",
+        native_unit_of_measurement="min",
+        icon="mdi:white-balance-sunny",
+    ),
+    _sensor(
+        "sun_last1h_glob",
+        "Sunshine Last Hour",
+        native_unit_of_measurement="min",
+        icon="mdi:white-balance-sunny",
     ),
 )
+
+SENSOR_TYPES_BY_KEY: dict[str, SensorEntityDescription] = {
+    description.key: description for description in SENSOR_TYPES
+}
 
 LAST_FETCH_SENSOR = SensorEntityDescription(
     key="last_fetch",

@@ -11,6 +11,9 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dmi.const import (
+    CONF_BACKUP_ALLOW_OVERRIDE,
+    CONF_BACKUP_PARAMETERS,
+    CONF_BACKUP_STATIONS,
     CONF_INCLUDE_FORECAST,
     CONF_STATION_ID,
     CONF_STATION_NAME,
@@ -437,13 +440,55 @@ def mock_coordinator_data() -> dict[str, Any]:
     """Return mock coordinator data (processed API response)."""
     return {
         "observations": {
-            "temp_dry": {"value": 15.5, "observed": "2024-01-15T12:00:00Z"},
-            "humidity": {"value": 75.0, "observed": "2024-01-15T12:00:00Z"},
-            "wind_speed": {"value": 5.2, "observed": "2024-01-15T12:00:00Z"},
-            "wind_dir": {"value": 180.0, "observed": "2024-01-15T12:00:00Z"},
-            "pressure_at_sea": {"value": 1013.25, "observed": "2024-01-15T12:00:00Z"},
-            "visibility": {"value": 10000, "observed": "2024-01-15T12:00:00Z"},
-            "cloud_cover": {"value": 50.0, "observed": "2024-01-15T12:00:00Z"},
+            "temp_dry": {
+                "value": 15.5,
+                "observed": "2024-01-15T12:00:00Z",
+                "source_station_id": "06180",
+                "source_station_name": "Kobenhavns Lufthavn",
+                "source_type": "primary",
+            },
+            "humidity": {
+                "value": 75.0,
+                "observed": "2024-01-15T12:00:00Z",
+                "source_station_id": "06180",
+                "source_station_name": "Kobenhavns Lufthavn",
+                "source_type": "primary",
+            },
+            "wind_speed": {
+                "value": 5.2,
+                "observed": "2024-01-15T12:00:00Z",
+                "source_station_id": "06180",
+                "source_station_name": "Kobenhavns Lufthavn",
+                "source_type": "primary",
+            },
+            "wind_dir": {
+                "value": 180.0,
+                "observed": "2024-01-15T12:00:00Z",
+                "source_station_id": "06180",
+                "source_station_name": "Kobenhavns Lufthavn",
+                "source_type": "primary",
+            },
+            "pressure_at_sea": {
+                "value": 1013.25,
+                "observed": "2024-01-15T12:00:00Z",
+                "source_station_id": "06180",
+                "source_station_name": "Kobenhavns Lufthavn",
+                "source_type": "primary",
+            },
+            "visibility": {
+                "value": 10000,
+                "observed": "2024-01-15T12:00:00Z",
+                "source_station_id": "06180",
+                "source_station_name": "Kobenhavns Lufthavn",
+                "source_type": "primary",
+            },
+            "cloud_cover": {
+                "value": 50.0,
+                "observed": "2024-01-15T12:00:00Z",
+                "source_station_id": "06180",
+                "source_station_name": "Kobenhavns Lufthavn",
+                "source_type": "primary",
+            },
         },
         "forecast": {
             "hourly": [
@@ -469,6 +514,45 @@ def mock_coordinator_data() -> dict[str, Any]:
         },
         "last_updated": datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
     }
+
+
+@pytest.fixture
+def advanced_config_entry_data() -> dict[str, Any]:
+    """Return advanced composite config entry data."""
+    return {
+        "setup_type": "advanced",
+        CONF_STATION_ID: "06186",
+        CONF_STATION_NAME: "Landbohojskolen",
+        "latitude": 55.68,
+        "longitude": 12.53,
+        CONF_USE_COORDINATES: False,
+        CONF_BACKUP_STATIONS: [
+            {
+                CONF_STATION_ID: "06187",
+                CONF_STATION_NAME: "Kobenhavns Toldbod",
+                "latitude": 55.69,
+                "longitude": 12.60,
+                CONF_BACKUP_PARAMETERS: ["radia_glob", "sun_last1h_glob"],
+                CONF_BACKUP_ALLOW_OVERRIDE: False,
+            }
+        ],
+    }
+
+
+@pytest.fixture
+def advanced_config_entry(
+    advanced_config_entry_data: dict[str, Any],
+    mock_config_entry_options: dict[str, Any],
+) -> MockConfigEntry:
+    """Create an advanced composite mock config entry."""
+    return MockConfigEntry(
+        domain=DOMAIN,
+        title="Landbohojskolen + backups",
+        data=advanced_config_entry_data,
+        options=mock_config_entry_options,
+        unique_id="dmi_advanced_06186_testhash",
+        version=1,
+    )
 
 
 @pytest.fixture
@@ -503,19 +587,49 @@ def mock_api_client() -> MagicMock:
                 "type": "Synop",
                 "parameterId": ["temp_dry", "humidity", "wind_speed", "pressure_at_sea"],
             },
+            {
+                "stationId": "06186",
+                "name": "Landbohojskolen",
+                "latitude": 55.68,
+                "longitude": 12.53,
+                "type": "Synop",
+                "parameterId": ["temp_dry", "humidity"],
+            },
+            {
+                "stationId": "06187",
+                "name": "Kobenhavns Toldbod",
+                "latitude": 55.69,
+                "longitude": 12.60,
+                "type": "Synop",
+                "parameterId": ["radia_glob", "radia_glob_past1h", "sun_last1h_glob", "temp_dry"],
+            },
         ]
     )
 
-    # Return processed observation data (keyed by parameterId)
-    client.get_observations = AsyncMock(
-        return_value={
+    observation_payloads = {
+        "06180": {
             "temp_dry": {"value": 15.5, "observed": "2024-01-15T12:00:00Z"},
             "humidity": {"value": 75.0, "observed": "2024-01-15T12:00:00Z"},
             "wind_speed": {"value": 5.2, "observed": "2024-01-15T12:00:00Z"},
             "wind_dir": {"value": 180.0, "observed": "2024-01-15T12:00:00Z"},
             "pressure_at_sea": {"value": 1013.25, "observed": "2024-01-15T12:00:00Z"},
             "cloud_cover": {"value": 50.0, "observed": "2024-01-15T12:00:00Z"},
-        }
+            "visibility": {"value": 10000, "observed": "2024-01-15T12:00:00Z"},
+        },
+        "06186": {
+            "temp_dry": {"value": 16.0, "observed": "2024-01-15T12:00:00Z"},
+            "humidity": {"value": 70.0, "observed": "2024-01-15T12:00:00Z"},
+        },
+        "06187": {
+            "radia_glob": {"value": 240.0, "observed": "2024-01-15T12:00:00Z"},
+            "radia_glob_past1h": {"value": 160.0, "observed": "2024-01-15T12:00:00Z"},
+            "sun_last1h_glob": {"value": 45.0, "observed": "2024-01-15T12:00:00Z"},
+            "temp_dry": {"value": 18.0, "observed": "2024-01-15T12:00:00Z"},
+        },
+    }
+
+    client.get_observations = AsyncMock(
+        side_effect=lambda station_id: observation_payloads[station_id]
     )
 
     # Return processed forecast data (with temperature converted from Kelvin)
