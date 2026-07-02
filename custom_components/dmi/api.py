@@ -17,6 +17,14 @@ class CannotConnect(Exception):
     """Error to indicate we cannot connect."""
 
 
+class UpstreamError(CannotConnect):
+    """Error to indicate the upstream API returned a non-rate-limit failure."""
+
+
+class RequestTimeout(CannotConnect):
+    """Error to indicate an API request timed out."""
+
+
 class RateLimitExceeded(Exception):
     """Error to indicate rate limit exceeded."""
 
@@ -73,6 +81,14 @@ class DMIApiClient:
             str(props.get("updated") or props.get("created") or ""),
         )
 
+    @staticmethod
+    def _truncate_error_text(text: str, limit: int = 200) -> str:
+        """Return a compact error payload snippet for logs and exceptions."""
+        compact = " ".join(str(text).split())
+        if len(compact) <= limit:
+            return compact
+        return f"{compact[: limit - 3]}..."
+
     async def _request(self, url: str, params: dict[str, Any] | None = None) -> dict:
         """Make an API request.
 
@@ -95,6 +111,20 @@ class DMIApiClient:
             ) as response:
                 if response.status == 429:
                     raise RateLimitExceeded("DMI API rate limit exceeded")
+                if response.status >= 400:
+                    response_text = await response.text()
+                    truncated_text = self._truncate_error_text(response_text)
+                    _LOGGER.error(
+                        "DMI API returned HTTP %s for %s with params %s: %s",
+                        response.status,
+                        url,
+                        params,
+                        truncated_text or "<empty body>",
+                    )
+                    raise UpstreamError(
+                        f"HTTP {response.status} error from DMI API"
+                        + (f": {truncated_text}" if truncated_text else "")
+                    )
                 response.raise_for_status()
                 data = await response.json()
                 _LOGGER.debug("Received response with %d bytes", len(str(data)))
@@ -104,14 +134,18 @@ class DMIApiClient:
         except aiohttp.ClientResponseError as err:
             if err.status == 429:
                 raise RateLimitExceeded("DMI API rate limit exceeded") from err
-            _LOGGER.error("API response error: %s", err)
-            raise CannotConnect(f"API error: {err}") from err
+            _LOGGER.error("DMI API response error (HTTP %s): %s", err.status, err)
+            raise UpstreamError(f"HTTP {err.status} error from DMI API: {err}") from err
         except aiohttp.ClientError as err:
             _LOGGER.error("API connection error: %s", err)
             raise CannotConnect(f"Connection error: {err}") from err
+        except UpstreamError:
+            raise
+        except RequestTimeout:
+            raise
         except TimeoutError as err:
             _LOGGER.error("API timeout: %s", err)
-            raise CannotConnect(f"Request timeout: {err}") from err
+            raise RequestTimeout(f"Request timeout: {err}") from err
         except Exception as err:
             _LOGGER.error("Unexpected API error: %s", err)
             raise CannotConnect(f"Unexpected error: {err}") from err

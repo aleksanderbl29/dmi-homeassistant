@@ -22,6 +22,7 @@ A Home Assistant custom integration for weather data from the Danish Meteorologi
   - Visibility
   - Cloud Cover
   - Solar Radiation
+  - Last Successful Update (diagnostic timestamp)
 - Support for all active DMI weather stations in Denmark, Greenland, and the Faroe Islands
 - Danish and English translations
 
@@ -86,8 +87,10 @@ Depending on what the selected station reports, you may get sensors for:
 | Visibility | m | Horizontal visibility |
 | Cloud Cover | % | Cloud coverage percentage |
 | Solar Radiation | W/m² | Global solar radiation |
+| Last Successful Update | timestamp | Time of the last successful data fetch from DMI |
 
 > **Note**: Not all stations report all parameters. The integration only creates sensors for parameters the selected station actually provides.
+> The diagnostic `Last Successful Update` sensor is always created for a configured station.
 
 ## Data Sources And API Keys
 
@@ -128,6 +131,7 @@ Forecast requires coordinates. Enable "Use Home Assistant coordinates for foreca
 ### Connection errors
 
 Check your internet connection. The integration will automatically retry when connectivity is restored.
+During transient upstream failures, the integration may continue serving cached data. The `Last Successful Update` sensor will stay unchanged until a fresh fetch succeeds.
 
 ### HTTP 429 errors
 

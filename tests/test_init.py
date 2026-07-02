@@ -70,6 +70,9 @@ class TestIntegrationSetup:
         weather_entity = hass.states.get("weather.kobenhavns_lufthavn")
         assert weather_entity is not None
 
+        last_fetch_entity = hass.states.get("sensor.kobenhavns_lufthavn_last_successful_update")
+        assert last_fetch_entity is not None
+
     async def test_setup_entry_api_called(
         self,
         hass: HomeAssistant,

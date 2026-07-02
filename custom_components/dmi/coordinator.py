@@ -13,7 +13,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .api import CannotConnect, DMIApiClient, RateLimitExceeded
+from .api import (
+    CannotConnect,
+    DMIApiClient,
+    RateLimitExceeded,
+    RequestTimeout,
+    UpstreamError,
+)
 from .const import (
     CONF_INCLUDE_FORECAST,
     CONF_LATITUDE,
@@ -84,6 +90,19 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=update_interval,
             config_entry=config_entry,
         )
+
+    def _return_cached_data(
+        self,
+        *,
+        log_message: str,
+        error: Exception,
+    ) -> dict[str, Any] | None:
+        """Return cached coordinator data when available."""
+        if self.data is None:
+            return None
+
+        _LOGGER.warning(log_message, self.station_id, error)
+        return self.data
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from DMI API.
@@ -168,7 +187,45 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if self.data is not None:
                 return self.data
             raise UpdateFailed(f"Rate limit exceeded, will retry after cooldown: {err}") from err
+        except UpstreamError as err:
+            cached_data = self._return_cached_data(
+                log_message=(
+                    "DMI upstream API failure while refreshing %s; "
+                    "continuing to serve cached data: %s"
+                ),
+                error=err,
+            )
+            if cached_data is not None:
+                return cached_data
+            raise UpdateFailed(f"Upstream API error: {err}") from err
+        except RequestTimeout as err:
+            cached_data = self._return_cached_data(
+                log_message=(
+                    "DMI request timeout while refreshing %s; continuing to serve cached data: %s"
+                ),
+                error=err,
+            )
+            if cached_data is not None:
+                return cached_data
+            raise UpdateFailed(f"Timeout fetching data: {err}") from err
         except CannotConnect as err:
+            cached_data = self._return_cached_data(
+                log_message=(
+                    "Failed to refresh DMI data for %s due to a connection error; "
+                    "continuing to serve cached data: %s"
+                ),
+                error=err,
+            )
+            if cached_data is not None:
+                return cached_data
             raise UpdateFailed(f"Connection error: {err}") from err
         except TimeoutError as err:
+            cached_data = self._return_cached_data(
+                log_message=(
+                    "Timed out refreshing DMI data for %s; continuing to serve cached data: %s"
+                ),
+                error=err,
+            )
+            if cached_data is not None:
+                return cached_data
             raise UpdateFailed(f"Timeout fetching data: {err}") from err

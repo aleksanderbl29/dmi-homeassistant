@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
@@ -11,7 +12,13 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_STATION_ID, CONF_STATION_NAME, DOMAIN, SENSOR_TYPES
+from .const import (
+    CONF_STATION_ID,
+    CONF_STATION_NAME,
+    DOMAIN,
+    LAST_FETCH_SENSOR,
+    SENSOR_TYPES,
+)
 from .coordinator import DMIDataUpdateCoordinator
 
 
@@ -28,7 +35,12 @@ async def async_setup_entry(
     available_params = set(observations.keys())
 
     # Create sensors only for parameters the station actually reports
-    entities: list[DMISensor] = []
+    entities: list[DMISensor | DMILastFetchSensor] = [
+        DMILastFetchSensor(
+            coordinator=coordinator,
+            config_entry=config_entry,
+        )
+    ]
     for description in SENSOR_TYPES:
         # Only create sensor if station has this parameter
         if description.key in available_params:
@@ -43,8 +55,8 @@ async def async_setup_entry(
     async_add_entities(entities, True)
 
 
-class DMISensor(CoordinatorEntity[DMIDataUpdateCoordinator], SensorEntity):
-    """Representation of a DMI Weather sensor."""
+class DMIBaseSensor(CoordinatorEntity[DMIDataUpdateCoordinator], SensorEntity):
+    """Shared behavior for DMI sensors."""
 
     _attr_has_entity_name = True
 
@@ -52,18 +64,12 @@ class DMISensor(CoordinatorEntity[DMIDataUpdateCoordinator], SensorEntity):
         self,
         coordinator: DMIDataUpdateCoordinator,
         config_entry: ConfigEntry,
-        entity_description: SensorEntityDescription,
     ) -> None:
-        """Initialize the sensor."""
+        """Initialize shared sensor state."""
         super().__init__(coordinator)
-
-        self.entity_description = entity_description
         self._config_entry = config_entry
         self._station_id = str(config_entry.data.get(CONF_STATION_ID) or "")
         self._station_name = str(config_entry.data.get(CONF_STATION_NAME) or "DMI Weather")
-
-        # Unique ID follows pattern: {entry_id}_{sensor_key}
-        self._attr_unique_id = f"{config_entry.entry_id}_{entity_description.key}"
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -75,6 +81,23 @@ class DMISensor(CoordinatorEntity[DMIDataUpdateCoordinator], SensorEntity):
             model=f"Weather Station {self._station_id}",
             configuration_url="https://www.dmi.dk",
         )
+
+
+class DMISensor(DMIBaseSensor):
+    """Representation of a DMI Weather sensor."""
+
+    def __init__(
+        self,
+        coordinator: DMIDataUpdateCoordinator,
+        config_entry: ConfigEntry,
+        entity_description: SensorEntityDescription,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, config_entry)
+        self.entity_description = entity_description
+
+        # Unique ID follows pattern: {entry_id}_{sensor_key}
+        self._attr_unique_id = f"{config_entry.entry_id}_{entity_description.key}"
 
     @property
     def native_value(self) -> Any:
@@ -112,3 +135,29 @@ class DMISensor(CoordinatorEntity[DMIDataUpdateCoordinator], SensorEntity):
             attributes["last_updated"] = last_updated.isoformat()
 
         return attributes
+
+
+class DMILastFetchSensor(DMIBaseSensor):
+    """Diagnostic sensor for the last successful fetch timestamp."""
+
+    entity_description = LAST_FETCH_SENSOR
+
+    def __init__(
+        self,
+        coordinator: DMIDataUpdateCoordinator,
+        config_entry: ConfigEntry,
+    ) -> None:
+        """Initialize the last-fetch sensor."""
+        super().__init__(coordinator, config_entry)
+        self._attr_unique_id = f"{config_entry.entry_id}_{LAST_FETCH_SENSOR.key}"
+
+    @property
+    def native_value(self) -> datetime | None:
+        """Return the timestamp of the last successful fetch."""
+        if self.coordinator.data is None:
+            return None
+
+        last_updated = self.coordinator.data.get("last_updated")
+        if isinstance(last_updated, datetime):
+            return last_updated
+        return None

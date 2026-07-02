@@ -13,6 +13,7 @@ from custom_components.dmi.api import (
     CannotConnect,
     DMIApiClient,
     RateLimitExceeded,
+    UpstreamError,
 )
 from custom_components.dmi.const import BASE_URL, FORECAST_URL, METOBS_URL
 
@@ -399,6 +400,24 @@ class TestDMIApiClient:
         with pytest.raises(RateLimitExceeded):
             await api_client.get_stations()
 
+    async def test_http_error_status_includes_response_body(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test non-429 HTTP errors include status and body details."""
+        mock_response = AsyncMock()
+        mock_response.status = 503
+        mock_response.text = AsyncMock(return_value="Service unavailable upstream")
+
+        mock_context = AsyncMock()
+        mock_context.__aenter__.return_value = mock_response
+        api_client._session.get = MagicMock(return_value=mock_context)
+
+        with pytest.raises(
+            UpstreamError, match="HTTP 503 error from DMI API: Service unavailable upstream"
+        ):
+            await api_client.get_stations()
+
     async def test_client_response_error_429(
         self,
         api_client: DMIApiClient,
@@ -476,7 +495,7 @@ class TestDMIApiClient:
     ) -> None:
         """Test non-429 ClientResponseError."""
         mock_response = AsyncMock()
-        mock_response.status = 500
+        mock_response.status = 200
         mock_response.raise_for_status = MagicMock(
             side_effect=aiohttp.ClientResponseError(
                 request_info=MagicMock(),
@@ -489,5 +508,5 @@ class TestDMIApiClient:
         mock_context.__aenter__.return_value = mock_response
         api_client._session.get = MagicMock(return_value=mock_context)
 
-        with pytest.raises(CannotConnect):
+        with pytest.raises(UpstreamError, match="HTTP 500 error from DMI API"):
             await api_client.get_stations()
