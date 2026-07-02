@@ -12,7 +12,6 @@ from custom_components.dmi.api import (
     AUTH_PARAM_NAMES,
     CannotConnect,
     DMIApiClient,
-    RequestTimeout,
     RateLimitExceeded,
     UpstreamError,
 )
