@@ -5,6 +5,7 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
+from homeassistant.helpers.entity import EntityCategory
 
 DOMAIN = "dmi"
 ATTRIBUTION = "Data provided by DMI Open Data"
@@ -137,4 +138,12 @@ SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.IRRADIANCE,
         state_class=SensorStateClass.MEASUREMENT,
     ),
+)
+
+LAST_FETCH_SENSOR = SensorEntityDescription(
+    key="last_fetch",
+    name="Last Successful Update",
+    device_class=SensorDeviceClass.TIMESTAMP,
+    entity_category=EntityCategory.DIAGNOSTIC,
+    icon="mdi:clock-check-outline",
 )

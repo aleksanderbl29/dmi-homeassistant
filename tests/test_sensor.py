@@ -9,11 +9,12 @@ from unittest.mock import MagicMock
 import pytest
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.dmi.const import DOMAIN, SENSOR_TYPES
+from custom_components.dmi.const import DOMAIN, LAST_FETCH_SENSOR, SENSOR_TYPES
 from custom_components.dmi.coordinator import DMIDataUpdateCoordinator
-from custom_components.dmi.sensor import DMISensor
+from custom_components.dmi.sensor import DMILastFetchSensor, DMISensor
 
 
 class TestDMISensor:
@@ -234,6 +235,97 @@ class TestDMISensor:
         assert "last_updated" in attrs
         # Verify it's a valid ISO string (should contain 'T' for ISO format)
         assert "T" in attrs["last_updated"] or ":" in attrs["last_updated"]
+
+
+class TestDMILastFetchSensor:
+    """Test cases for the last-fetch diagnostic sensor."""
+
+    @pytest.fixture
+    def mock_coordinator(
+        self,
+        mock_coordinator_data: dict[str, Any],
+    ) -> MagicMock:
+        """Create a mock coordinator."""
+        coordinator = MagicMock(spec=DMIDataUpdateCoordinator)
+        coordinator.data = mock_coordinator_data
+        return coordinator
+
+    @pytest.fixture
+    def last_fetch_sensor(
+        self,
+        mock_coordinator: MagicMock,
+        mock_config_entry: MockConfigEntry,
+    ) -> DMILastFetchSensor:
+        """Create a last-fetch sensor instance."""
+        return DMILastFetchSensor(
+            coordinator=mock_coordinator,
+            config_entry=mock_config_entry,
+        )
+
+    def test_last_fetch_sensor_unique_id(
+        self,
+        last_fetch_sensor: DMILastFetchSensor,
+        mock_config_entry: MockConfigEntry,
+    ) -> None:
+        """Test unique ID format."""
+        assert last_fetch_sensor._attr_unique_id == f"{mock_config_entry.entry_id}_last_fetch"
+
+    def test_last_fetch_sensor_entity_description(
+        self,
+        last_fetch_sensor: DMILastFetchSensor,
+    ) -> None:
+        """Test diagnostic sensor description."""
+        assert last_fetch_sensor.entity_description == LAST_FETCH_SENSOR
+        assert last_fetch_sensor.entity_description.device_class == SensorDeviceClass.TIMESTAMP
+        assert last_fetch_sensor.entity_description.entity_category == EntityCategory.DIAGNOSTIC
+
+    def test_last_fetch_sensor_device_info(
+        self,
+        last_fetch_sensor: DMILastFetchSensor,
+        mock_config_entry: MockConfigEntry,
+    ) -> None:
+        """Test sensor shares station device info."""
+        device_info = last_fetch_sensor.device_info
+
+        assert (DOMAIN, mock_config_entry.entry_id) in device_info["identifiers"]
+        assert device_info["name"] == "Københavns Lufthavn"
+
+    def test_last_fetch_sensor_native_value(
+        self,
+        last_fetch_sensor: DMILastFetchSensor,
+    ) -> None:
+        """Test last fetch sensor uses coordinator last_updated."""
+        assert last_fetch_sensor.native_value == datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC)
+
+    def test_last_fetch_sensor_no_coordinator_data(
+        self,
+        mock_coordinator: MagicMock,
+        mock_config_entry: MockConfigEntry,
+    ) -> None:
+        """Test sensor returns None when coordinator has no data."""
+        mock_coordinator.data = None
+
+        sensor = DMILastFetchSensor(
+            coordinator=mock_coordinator,
+            config_entry=mock_config_entry,
+        )
+
+        assert sensor.native_value is None
+
+    def test_last_fetch_sensor_missing_last_updated(
+        self,
+        mock_coordinator: MagicMock,
+        mock_config_entry: MockConfigEntry,
+    ) -> None:
+        """Test sensor returns None when last_updated is absent."""
+        mock_coordinator.data = {"observations": {}}
+
+        sensor = DMILastFetchSensor(
+            coordinator=mock_coordinator,
+            config_entry=mock_config_entry,
+        )
+
+        assert sensor.native_value is None
 
 
 class TestSensorTypes:
