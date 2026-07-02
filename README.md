@@ -2,7 +2,7 @@
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![GitHub Release](https://img.shields.io/github/release/aleksanderbl29/dmi-homeassistant.svg)](https://github.com/aleksanderbl29/dmi-homeassistant/releases)
-[![License](https://img.shields.io/github/license/aleksanderbl29/dmi-homeassistant.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A Home Assistant custom integration for weather data from the Danish Meteorological Institute (DMI).
 
