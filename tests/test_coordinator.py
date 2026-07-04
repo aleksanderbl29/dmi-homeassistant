@@ -116,13 +116,13 @@ class TestDMIDataUpdateCoordinator:
         mock_api_client.get_observations.assert_any_call("06187")
         mock_api_client.get_forecast.assert_called_once()
 
-    async def test_advanced_update_override_replaces_primary(
+    async def test_advanced_update_ignores_legacy_override(
         self,
         hass: HomeAssistant,
         mock_api_client: MagicMock,
         mock_config_entry_options: dict[str, Any],
     ) -> None:
-        """Test backup override can replace overlapping parameters."""
+        """Test legacy override config does not replace primary observations."""
         entry = MockConfigEntry(
             domain=DOMAIN,
             title="Landbohojskolen + backups",
@@ -149,8 +149,8 @@ class TestDMIDataUpdateCoordinator:
         coordinator = DMIDataUpdateCoordinator(hass, entry, mock_api_client)
         data = await coordinator._async_update_data()
 
-        assert data["observations"]["temp_dry"]["value"] == 18.0
-        assert data["observations"]["temp_dry"][CONF_SOURCE_STATION_ID] == "06187"
+        assert data["observations"]["temp_dry"]["value"] == 16.0
+        assert data["observations"]["temp_dry"][CONF_SOURCE_STATION_ID] == "06186"
 
     async def test_advanced_update_without_override_keeps_primary(
         self,
@@ -159,7 +159,6 @@ class TestDMIDataUpdateCoordinator:
     ) -> None:
         """Test backup overlap does not replace the primary without override."""
         advanced_coordinator.backup_stations[0][CONF_BACKUP_PARAMETERS] = ["temp_dry"]
-        advanced_coordinator.backup_stations[0][CONF_BACKUP_ALLOW_OVERRIDE] = False
 
         data = await advanced_coordinator._async_update_data()
 

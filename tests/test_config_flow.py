@@ -13,8 +13,8 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dmi.api import CannotConnect
 from custom_components.dmi.const import (
-    CONF_BACKUP_ALLOW_OVERRIDE,
     CONF_BACKUP_PARAMETERS,
+    CONF_BACKUP_STATION_NAME_SUFFIX,
     CONF_BACKUP_STATIONS,
     CONF_INCLUDE_FORECAST,
     CONF_SETUP_TYPE,
@@ -148,13 +148,7 @@ class TestDMIConfigFlow:
                 result["flow_id"],
                 {
                     CONF_STATION_ID: "06187",
-                    CONF_BACKUP_ALLOW_OVERRIDE: False,
-                },
-            )
-            result = await hass.config_entries.flow.async_configure(
-                result["flow_id"],
-                {
-                    CONF_BACKUP_PARAMETERS: ["radia_glob", "sun_last1h_glob"],
+                    CONF_BACKUP_STATION_NAME_SUFFIX: True,
                 },
             )
 
@@ -166,6 +160,7 @@ class TestDMIConfigFlow:
             "radia_glob",
             "sun_last1h_glob",
         ]
+        assert result["data"][CONF_BACKUP_STATIONS][0][CONF_BACKUP_STATION_NAME_SUFFIX] is True
 
     async def test_advanced_flow_rejects_duplicate_or_primary_backup_station(
         self,
@@ -215,31 +210,27 @@ class TestDMIConfigFlow:
             )
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"],
-                {CONF_STATION_ID: "06186", CONF_BACKUP_ALLOW_OVERRIDE: False},
+                {CONF_STATION_ID: "06186", CONF_BACKUP_STATION_NAME_SUFFIX: False},
             )
 
             assert result["errors"]["base"] == "backup_matches_primary"
 
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"],
-                {CONF_STATION_ID: "06187", CONF_BACKUP_ALLOW_OVERRIDE: False},
+                {CONF_STATION_ID: "06187", CONF_BACKUP_STATION_NAME_SUFFIX: False},
             )
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"],
-                {CONF_BACKUP_PARAMETERS: ["radia_glob"]},
-            )
-            result = await hass.config_entries.flow.async_configure(
-                result["flow_id"],
-                {CONF_STATION_ID: "06187", CONF_BACKUP_ALLOW_OVERRIDE: False},
+                {CONF_STATION_ID: "06187", CONF_BACKUP_STATION_NAME_SUFFIX: False},
             )
 
         assert result["errors"]["base"] == "duplicate_backup_station"
 
-    async def test_advanced_flow_requires_parameters(
+    async def test_advanced_flow_rejects_backup_without_missing_parameters(
         self,
         hass: HomeAssistant,
     ) -> None:
-        """Test backup parameter selection is required."""
+        """Test backup stations need at least one primary-missing parameter."""
         stations = [
             {
                 "stationId": "06186",
@@ -253,7 +244,7 @@ class TestDMIConfigFlow:
                 "name": "Kobenhavns Toldbod",
                 "latitude": 55.69,
                 "longitude": 12.60,
-                "parameterId": ["radia_glob"],
+                "parameterId": ["temp_dry"],
             },
         ]
         with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
@@ -276,13 +267,10 @@ class TestDMIConfigFlow:
             )
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"],
-                {CONF_STATION_ID: "06187", CONF_BACKUP_ALLOW_OVERRIDE: False},
-            )
-            result = await hass.config_entries.flow.async_configure(
-                result["flow_id"], {CONF_BACKUP_PARAMETERS: []}
+                {CONF_STATION_ID: "06187", CONF_BACKUP_STATION_NAME_SUFFIX: False},
             )
 
-        assert result["errors"][CONF_BACKUP_PARAMETERS] == "no_backup_parameters_selected"
+        assert result["errors"]["base"] == "no_backup_parameters"
 
     async def test_normal_flow_duplicate_entry(
         self,

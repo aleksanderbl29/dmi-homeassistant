@@ -3,6 +3,7 @@
     "step": {
       "user": {
         "title": "DMI Weather Setup",
+        "description": "Normal station setup is recommended for most users. Use advanced composite setup only if you want to enrich a primary station with backup-only sensors from one or more stations.",
         "menu_options": {
           "station": "Normal station setup",
           "advanced_primary": "Advanced composite setup"
@@ -35,14 +36,7 @@
         "description": "Choose backup station {backup_index}.",
         "data": {
           "station_id": "Backup station",
-          "allow_override": "Allow backup station to override the primary station"
-        }
-      },
-      "advanced_backup_parameters": {
-        "title": "Backup Parameters",
-        "description": "Choose parameters from {backup_station} for backup station {backup_index}.",
-        "data": {
-          "parameters": "Backup parameters"
+          "backup_station_name_suffix": "Add backup station name to backup sensor entity names"
         }
       }
     },
@@ -52,8 +46,7 @@
       "invalid_station": "Selected station is invalid",
       "backup_matches_primary": "Backup station cannot be the same as the primary station",
       "duplicate_backup_station": "This backup station is already selected",
-      "no_backup_parameters": "No supported backup parameters are available for this station",
-      "no_backup_parameters_selected": "Select at least one backup parameter"
+      "no_backup_parameters": "No supported backup-only parameters are available for this station"
     },
     "abort": {
       "already_configured": "This station is already configured"

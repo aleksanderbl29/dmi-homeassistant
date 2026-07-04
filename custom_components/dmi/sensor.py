@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -13,6 +14,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
+    CONF_BACKUP_STATION_NAME_SUFFIX,
+    CONF_BACKUP_STATIONS,
     CONF_SETUP_TYPE,
     CONF_SOURCE_STATION_ID,
     CONF_SOURCE_STATION_NAME,
@@ -23,6 +26,7 @@ from .const import (
     LAST_FETCH_SENSOR,
     SENSOR_TYPES,
     SETUP_TYPE_ADVANCED,
+    SOURCE_TYPE_BACKUP,
 )
 from .coordinator import DMIDataUpdateCoordinator
 
@@ -104,10 +108,45 @@ class DMISensor(DMIBaseSensor):
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator, config_entry)
-        self.entity_description = entity_description
+        self.entity_description = self._description_with_source_suffix(entity_description)
 
         # Unique ID follows pattern: {entry_id}_{sensor_key}
         self._attr_unique_id = f"{config_entry.entry_id}_{entity_description.key}"
+
+    def _description_with_source_suffix(
+        self,
+        entity_description: SensorEntityDescription,
+    ) -> SensorEntityDescription:
+        """Append backup station name to backup-sourced sensor names when requested."""
+        if self._setup_type != SETUP_TYPE_ADVANCED or self.coordinator.data is None:
+            return entity_description
+
+        observations = self.coordinator.data.get("observations", {})
+        param_data = observations.get(entity_description.key, {})
+        if param_data.get(CONF_SOURCE_TYPE) != SOURCE_TYPE_BACKUP:
+            return entity_description
+
+        source_station_id = str(param_data.get(CONF_SOURCE_STATION_ID) or "")
+        backup = next(
+            (
+                backup_station
+                for backup_station in self._config_entry.data.get(CONF_BACKUP_STATIONS, [])
+                if str(backup_station.get(CONF_STATION_ID) or "") == source_station_id
+            ),
+            None,
+        )
+        if not backup or not backup.get(CONF_BACKUP_STATION_NAME_SUFFIX, False):
+            return entity_description
+
+        source_station_name = str(
+            backup.get(CONF_STATION_NAME)
+            or param_data.get(CONF_SOURCE_STATION_NAME)
+            or source_station_id
+        )
+        return replace(
+            entity_description,
+            name=f"{entity_description.name} {source_station_name}",
+        )
 
     @property
     def native_value(self) -> Any:

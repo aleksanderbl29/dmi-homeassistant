@@ -21,7 +21,6 @@ from .api import (
     UpstreamError,
 )
 from .const import (
-    CONF_BACKUP_ALLOW_OVERRIDE,
     CONF_BACKUP_PARAMETERS,
     CONF_BACKUP_STATIONS,
     CONF_INCLUDE_FORECAST,
@@ -277,7 +276,6 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for backup in self.backup_stations:
             backup_station_id = str(backup.get(CONF_STATION_ID) or "")
             backup_station_name = str(backup.get(CONF_STATION_NAME) or backup_station_id)
-            allow_override = bool(backup.get(CONF_BACKUP_ALLOW_OVERRIDE, False))
             selected_parameters = {
                 str(parameter_id)
                 for parameter_id in backup.get(CONF_BACKUP_PARAMETERS, [])
@@ -297,5 +295,5 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 backup_value = backup_observations.get(parameter_id)
                 if backup_value is None:
                     continue
-                if allow_override or parameter_id not in observations:
+                if parameter_id not in observations:
                     observations[parameter_id] = backup_value

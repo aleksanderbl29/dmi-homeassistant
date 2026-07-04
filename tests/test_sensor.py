@@ -12,7 +12,16 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.dmi.const import DOMAIN, LAST_FETCH_SENSOR, SENSOR_TYPES
+from custom_components.dmi.const import (
+    CONF_BACKUP_PARAMETERS,
+    CONF_BACKUP_STATION_NAME_SUFFIX,
+    CONF_BACKUP_STATIONS,
+    CONF_STATION_ID,
+    CONF_STATION_NAME,
+    DOMAIN,
+    LAST_FETCH_SENSOR,
+    SENSOR_TYPES,
+)
 from custom_components.dmi.coordinator import DMIDataUpdateCoordinator
 from custom_components.dmi.sensor import DMILastFetchSensor, DMISensor
 
@@ -115,8 +124,55 @@ class TestDMISensor:
         )
 
         assert sensor.native_value == 240.0
+        assert sensor.entity_description.name == "Solar Radiation"
         assert sensor.extra_state_attributes["source_type"] == "backup"
         assert "Composite Weather Station" in sensor.device_info["model"]
+
+    def test_backup_sourced_name_suffix(
+        self,
+        mock_coordinator: MagicMock,
+        mock_config_entry_options: dict[str, Any],
+    ) -> None:
+        """Test backup-sourced sensors can include the backup station name."""
+        description = next(s for s in SENSOR_TYPES if s.key == "radia_glob")
+        mock_coordinator.data = {
+            "observations": {
+                "radia_glob": {
+                    "value": 240.0,
+                    "observed": "2024-01-15T12:00:00Z",
+                    "source_station_id": "06187",
+                    "source_station_name": "Kobenhavns Toldbod",
+                    "source_type": "backup",
+                }
+            },
+            "last_updated": datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC),
+        }
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Landbohojskolen + backups",
+            data={
+                "setup_type": "advanced",
+                CONF_STATION_ID: "06186",
+                CONF_STATION_NAME: "Landbohojskolen",
+                CONF_BACKUP_STATIONS: [
+                    {
+                        CONF_STATION_ID: "06187",
+                        CONF_STATION_NAME: "Kobenhavns Toldbod",
+                        CONF_BACKUP_PARAMETERS: ["radia_glob"],
+                        CONF_BACKUP_STATION_NAME_SUFFIX: True,
+                    }
+                ],
+            },
+            options=mock_config_entry_options,
+        )
+
+        sensor = DMISensor(
+            coordinator=mock_coordinator,
+            config_entry=entry,
+            entity_description=description,
+        )
+
+        assert sensor.entity_description.name == "Solar Radiation Kobenhavns Toldbod"
 
 
 class TestDMILastFetchSensor:

@@ -11,8 +11,8 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dmi.const import (
-    CONF_BACKUP_ALLOW_OVERRIDE,
     CONF_BACKUP_PARAMETERS,
+    CONF_BACKUP_STATION_NAME_SUFFIX,
     CONF_BACKUP_STATIONS,
     CONF_INCLUDE_FORECAST,
     CONF_STATION_ID,
@@ -533,7 +533,7 @@ def advanced_config_entry_data() -> dict[str, Any]:
                 "latitude": 55.69,
                 "longitude": 12.60,
                 CONF_BACKUP_PARAMETERS: ["radia_glob", "sun_last1h_glob"],
-                CONF_BACKUP_ALLOW_OVERRIDE: False,
+                CONF_BACKUP_STATION_NAME_SUFFIX: False,
             }
         ],
     }

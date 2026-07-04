@@ -3,6 +3,7 @@
     "step": {
       "user": {
         "title": "DMI Vejr Opsaetning",
+        "description": "Normal stationsopsaetning anbefales til de fleste brugere. Brug kun avanceret sammensat opsaetning, hvis du vil berige en primaer station med backup-sensorer fra en eller flere stationer.",
         "menu_options": {
           "station": "Normal stationsopsaetning",
           "advanced_primary": "Avanceret sammensat opsaetning"
@@ -35,14 +36,7 @@
         "description": "Vaelg backupstation {backup_index}.",
         "data": {
           "station_id": "Backupstation",
-          "allow_override": "Tillad backupstation at overskrive den primaere station"
-        }
-      },
-      "advanced_backup_parameters": {
-        "title": "Backupparametre",
-        "description": "Vaelg parametre fra {backup_station} til backupstation {backup_index}.",
-        "data": {
-          "parameters": "Backupparametre"
+          "backup_station_name_suffix": "Tilfoej backupstationens navn til backup-sensorers enhedsnavne"
         }
       }
     },
@@ -52,8 +46,7 @@
       "invalid_station": "Den valgte station er ugyldig",
       "backup_matches_primary": "Backupstation maa ikke vaere den samme som den primaere station",
       "duplicate_backup_station": "Denne backupstation er allerede valgt",
-      "no_backup_parameters": "Der er ingen understoettede backupparametre for denne station",
-      "no_backup_parameters_selected": "Vaelg mindst en backupparameter"
+      "no_backup_parameters": "Der er ingen understoettede backup-parametre kun fra denne station"
     },
     "abort": {
       "already_configured": "Denne station er allerede konfigureret"

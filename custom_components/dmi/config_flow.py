@@ -29,8 +29,8 @@ from homeassistant.helpers.selector import (
 
 from .api import CannotConnect, DMIApiClient
 from .const import (
-    CONF_BACKUP_ALLOW_OVERRIDE,
     CONF_BACKUP_PARAMETERS,
+    CONF_BACKUP_STATION_NAME_SUFFIX,
     CONF_BACKUP_STATIONS,
     CONF_INCLUDE_FORECAST,
     CONF_LATITUDE,
@@ -202,18 +202,27 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
             elif station_id in selected_backup_ids:
                 errors["base"] = "duplicate_backup_station"
             else:
-                self._advanced_backups.append(
-                    {
-                        CONF_STATION_ID: station_id,
-                        CONF_STATION_NAME: station.get(CONF_STATION_NAME) or station.get("name"),
-                        CONF_LATITUDE: station.get(CONF_LATITUDE) or station.get("latitude"),
-                        CONF_LONGITUDE: station.get(CONF_LONGITUDE) or station.get("longitude"),
-                        CONF_BACKUP_ALLOW_OVERRIDE: bool(
-                            user_input.get(CONF_BACKUP_ALLOW_OVERRIDE, False)
-                        ),
-                    }
-                )
-                return await self.async_step_advanced_backup_parameters()
+                backup_parameters = self._get_backup_parameter_ids(station)
+                if not backup_parameters:
+                    errors["base"] = "no_backup_parameters"
+                else:
+                    self._advanced_backups.append(
+                        {
+                            CONF_STATION_ID: station_id,
+                            CONF_STATION_NAME: station.get(CONF_STATION_NAME)
+                            or station.get("name"),
+                            CONF_LATITUDE: station.get(CONF_LATITUDE) or station.get("latitude"),
+                            CONF_LONGITUDE: station.get(CONF_LONGITUDE) or station.get("longitude"),
+                            CONF_BACKUP_PARAMETERS: backup_parameters,
+                            CONF_BACKUP_STATION_NAME_SUFFIX: bool(
+                                user_input.get(CONF_BACKUP_STATION_NAME_SUFFIX, False)
+                            ),
+                        }
+                    )
+                    self._advanced_current_backup_index += 1
+                    if self._advanced_current_backup_index >= self._advanced_backup_count:
+                        return await self._async_create_advanced_entry()
+                    return await self.async_step_advanced_backup_station()
 
         return self.async_show_form(
             step_id="advanced_backup_station",
@@ -225,71 +234,14 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
                             mode=SelectSelectorMode.DROPDOWN,
                         )
                     ),
-                    vol.Optional(CONF_BACKUP_ALLOW_OVERRIDE, default=False): BooleanSelector(),
+                    vol.Optional(
+                        CONF_BACKUP_STATION_NAME_SUFFIX,
+                        default=False,
+                    ): BooleanSelector(),
                 }
             ),
             errors=errors,
             description_placeholders={"backup_index": str(self._advanced_current_backup_index + 1)},
-        )
-
-    async def async_step_advanced_backup_parameters(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Choose which parameters to use from the selected backup station."""
-        current_backup = self._advanced_backups[-1]
-        errors: dict[str, str] = {}
-        available_parameters = self._get_backup_parameter_options(current_backup)
-
-        if not available_parameters:
-            self._advanced_backups.pop()
-            return self.async_show_form(
-                step_id="advanced_backup_station",
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(CONF_STATION_ID): SelectSelector(
-                            SelectSelectorConfig(
-                                options=self._build_station_options(),
-                                mode=SelectSelectorMode.DROPDOWN,
-                            )
-                        ),
-                        vol.Optional(CONF_BACKUP_ALLOW_OVERRIDE, default=False): BooleanSelector(),
-                    }
-                ),
-                errors={"base": "no_backup_parameters"},
-                description_placeholders={
-                    "backup_index": str(self._advanced_current_backup_index + 1)
-                },
-            )
-
-        if user_input is not None:
-            selected_parameters = list(user_input.get(CONF_BACKUP_PARAMETERS, []))
-            if not selected_parameters:
-                errors[CONF_BACKUP_PARAMETERS] = "no_backup_parameters_selected"
-            else:
-                current_backup[CONF_BACKUP_PARAMETERS] = selected_parameters
-                self._advanced_current_backup_index += 1
-                if self._advanced_current_backup_index >= self._advanced_backup_count:
-                    return await self._async_create_advanced_entry()
-                return await self.async_step_advanced_backup_station()
-
-        return self.async_show_form(
-            step_id="advanced_backup_parameters",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_BACKUP_PARAMETERS): SelectSelector(
-                        SelectSelectorConfig(
-                            options=available_parameters,
-                            mode=SelectSelectorMode.DROPDOWN,
-                            multiple=True,
-                        )
-                    )
-                }
-            ),
-            errors=errors,
-            description_placeholders={
-                "backup_station": str(current_backup[CONF_STATION_NAME]),
-                "backup_index": str(self._advanced_current_backup_index + 1),
-            },
         )
 
     async def _async_create_advanced_entry(self) -> ConfigFlowResult:
@@ -308,8 +260,8 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_BACKUP_STATIONS: [
                 {
                     CONF_STATION_ID: backup[CONF_STATION_ID],
-                    CONF_BACKUP_ALLOW_OVERRIDE: backup[CONF_BACKUP_ALLOW_OVERRIDE],
                     CONF_BACKUP_PARAMETERS: sorted(backup[CONF_BACKUP_PARAMETERS]),
+                    CONF_BACKUP_STATION_NAME_SUFFIX: backup[CONF_BACKUP_STATION_NAME_SUFFIX],
                 }
                 for backup in self._advanced_backups
             ],
@@ -373,39 +325,24 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
         station_options.sort(key=lambda option: option["label"])
         return station_options
 
-    def _get_backup_parameter_options(
-        self, backup_station: Mapping[str, Any]
-    ) -> list[dict[str, str]]:
-        """Return supported parameters for a backup station."""
+    def _get_backup_parameter_ids(self, backup_station: Mapping[str, Any]) -> list[str]:
+        """Return supported backup parameters missing from the primary station."""
         primary_station = self._get_station_by_id(str(self._advanced_primary[CONF_STATION_ID]))
         primary_parameters = {
             parameter_id
             for parameter_id in primary_station.get("parameterId", [])
             if parameter_id in SENSOR_TYPES_BY_KEY
         }
-        backup_station_data = self._get_station_by_id(str(backup_station[CONF_STATION_ID]))
         backup_parameters = [
             parameter_id
-            for parameter_id in backup_station_data.get("parameterId", [])
-            if parameter_id in SENSOR_TYPES_BY_KEY
+            for parameter_id in backup_station.get("parameterId", [])
+            if parameter_id in SENSOR_TYPES_BY_KEY and parameter_id not in primary_parameters
         ]
 
-        if not backup_station[CONF_BACKUP_ALLOW_OVERRIDE]:
-            backup_parameters = [
-                parameter_id
-                for parameter_id in backup_parameters
-                if parameter_id not in primary_parameters
-            ]
-
-        options = [
-            {
-                "value": parameter_id,
-                "label": SENSOR_TYPES_BY_KEY[parameter_id].name or parameter_id,
-            }
-            for parameter_id in backup_parameters
-        ]
-        options.sort(key=lambda option: option["label"])
-        return options
+        return sorted(
+            backup_parameters,
+            key=lambda parameter_id: SENSOR_TYPES_BY_KEY[parameter_id].name or parameter_id,
+        )
 
     async def _async_load_stations(self) -> bool:
         """Load station list from the DMI API."""
