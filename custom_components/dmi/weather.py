@@ -111,6 +111,31 @@ class DMIWeather(CoordinatorEntity[DMIDataUpdateCoordinator], WeatherEntity):
         obs = self._observations.get(key, {})
         return obs.get("value") if obs else None
 
+    @staticmethod
+    def _forecast_condition(entry: dict[str, Any]) -> str | None:
+        """Return a Home Assistant condition for a forecast entry."""
+        precipitation = entry.get("precipitation")
+        if precipitation is not None:
+            try:
+                if float(precipitation) > 0:
+                    return "rainy"
+            except (ValueError, TypeError):
+                pass
+
+        cloud_cover = entry.get("cloud_cover")
+        if cloud_cover is not None:
+            try:
+                cloud = float(cloud_cover)
+                if cloud < 20:
+                    return "sunny"
+                if cloud < 60:
+                    return "partlycloudy"
+                return "cloudy"
+            except (ValueError, TypeError):
+                pass
+
+        return None
+
     @property
     def condition(self) -> str | None:
         """Return the current condition."""
@@ -218,15 +243,9 @@ class DMIWeather(CoordinatorEntity[DMIDataUpdateCoordinator], WeatherEntity):
             if "precipitation" in entry:
                 forecast["native_precipitation"] = entry["precipitation"]
 
-            if "cloud_cover" in entry:
-                # Estimate condition from cloud cover
-                cloud = entry["cloud_cover"]
-                if cloud < 20:
-                    forecast["condition"] = "sunny"
-                elif cloud < 60:
-                    forecast["condition"] = "partlycloudy"
-                else:
-                    forecast["condition"] = "cloudy"
+            condition = self._forecast_condition(entry)
+            if condition is not None:
+                forecast["condition"] = condition
 
             forecasts.append(forecast)
 

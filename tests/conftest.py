@@ -371,7 +371,7 @@ MOCK_FORECAST_RESPONSE = {
             "dataType": "float",
             "axisNames": ["t", "y", "x"],
             "shape": [4, 1, 1],
-            "values": [50.0, 60.0, 70.0, 65.0],
+            "values": [0.5, 0.6, 0.7, 0.65],
         },
     },
 }
