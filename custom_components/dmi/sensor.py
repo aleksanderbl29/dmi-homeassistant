@@ -145,7 +145,7 @@ class DMISensor(DMIBaseSensor):
         )
         return replace(
             entity_description,
-            name=f"{entity_description.name} {source_station_name}",
+            name=f"{entity_description.name} - {source_station_name}",
         )
 
     @property

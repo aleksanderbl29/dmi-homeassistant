@@ -172,7 +172,7 @@ class TestDMISensor:
             entity_description=description,
         )
 
-        assert sensor.entity_description.name == "Solar Radiation Kobenhavns Toldbod"
+        assert sensor.entity_description.name == "Solar Radiation - Kobenhavns Toldbod"
 
 
 class TestDMILastFetchSensor:
