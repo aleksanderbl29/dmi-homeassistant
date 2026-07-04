@@ -292,6 +292,7 @@ class DMIApiClient:
         precipitation_data = ranges.get("total-precipitation", {}).get("values", [])
         cloud_cover_data = ranges.get("fraction-of-cloud-cover", {}).get("values", [])
 
+        previous_precipitation: float | None = None
         for i, time_value in enumerate(time_values):
             forecast_entry: dict[str, Any] = {
                 "datetime": time_value,
@@ -312,10 +313,21 @@ class DMIApiClient:
                 forecast_entry["humidity"] = humidity_data[i]
 
             if i < len(precipitation_data) and precipitation_data[i] is not None:
-                forecast_entry["precipitation"] = precipitation_data[i]
+                precipitation = float(precipitation_data[i])
+                if previous_precipitation is None:
+                    forecast_entry["precipitation"] = precipitation
+                else:
+                    forecast_entry["precipitation"] = max(
+                        precipitation - previous_precipitation,
+                        0,
+                    )
+                previous_precipitation = precipitation
 
             if i < len(cloud_cover_data) and cloud_cover_data[i] is not None:
-                forecast_entry["cloud_cover"] = cloud_cover_data[i]
+                cloud_cover = float(cloud_cover_data[i])
+                forecast_entry["cloud_cover"] = (
+                    cloud_cover * 100 if 0 <= cloud_cover <= 1 else cloud_cover
+                )
 
             hourly_forecast.append(forecast_entry)
 

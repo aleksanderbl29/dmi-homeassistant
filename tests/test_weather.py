@@ -6,7 +6,12 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from homeassistant.components.weather import WeatherEntityFeature
+from homeassistant.components.weather import (
+    ATTR_CONDITION_CLOUDY,
+    ATTR_CONDITION_RAINY,
+    ATTR_CONDITION_SUNNY,
+    WeatherEntityFeature,
+)
 from homeassistant.const import UnitOfPressure, UnitOfSpeed, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -366,6 +371,68 @@ class TestDMIWeather:
         forecasts = await entity.async_forecast_hourly()
 
         assert forecasts[0]["condition"] == "cloudy"
+
+    async def test_async_forecast_hourly_condition_rainy_when_precipitation_expected(
+        self,
+        mock_coordinator: MagicMock,
+        mock_config_entry: MockConfigEntry,
+    ) -> None:
+        """Test forecast condition prefers precipitation over cloud cover."""
+        mock_coordinator.data = {
+            "observations": {},
+            "forecast": {
+                "hourly": [
+                    {
+                        "datetime": "2024-01-15T12:00:00Z",
+                        "cloud_cover": 100.0,
+                        "precipitation": 0.1,
+                    },
+                ],
+            },
+        }
+        entity = DMIWeather(mock_coordinator, mock_config_entry)
+
+        forecasts = await entity.async_forecast_hourly()
+
+        assert forecasts[0]["condition"] == "rainy"
+
+    async def test_async_forecast_hourly_conditions_match_weather_card_icons(
+        self,
+        mock_coordinator: MagicMock,
+        mock_config_entry: MockConfigEntry,
+    ) -> None:
+        """Test forecast conditions use HA values that drive the matching icons."""
+        mock_coordinator.data = {
+            "observations": {},
+            "forecast": {
+                "hourly": [
+                    {
+                        "datetime": "2026-07-02T10:00:00Z",
+                        "cloud_cover": 100.0,
+                        "precipitation": 0.5,
+                    },
+                    {
+                        "datetime": "2026-07-03T10:00:00Z",
+                        "cloud_cover": 100.0,
+                        "precipitation": 0.0,
+                    },
+                    {
+                        "datetime": "2026-07-03T16:00:00Z",
+                        "cloud_cover": 10.0,
+                        "precipitation": 0.0,
+                    },
+                ],
+            },
+        }
+        entity = DMIWeather(mock_coordinator, mock_config_entry)
+
+        forecasts = await entity.async_forecast_hourly()
+
+        assert [forecast["condition"] for forecast in forecasts] == [
+            ATTR_CONDITION_RAINY,
+            ATTR_CONDITION_CLOUDY,
+            ATTR_CONDITION_SUNNY,
+        ]
 
     async def test_async_forecast_hourly_no_data(
         self,

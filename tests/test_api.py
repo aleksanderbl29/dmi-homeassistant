@@ -287,6 +287,27 @@ class TestDMIApiClient:
         assert abs(first_hour["temperature"] - 15.5) < 0.1
         assert first_hour["wind_speed"] == 5.0
         assert first_hour["wind_dir"] == 180
+        assert first_hour["cloud_cover"] == 50.0
+
+    async def test_get_forecast_converts_cumulative_precipitation_to_hourly_amounts(
+        self,
+        api_client: DMIApiClient,
+        mock_forecast_data: dict[str, Any],
+    ) -> None:
+        """Test cumulative DMI precipitation becomes per-hour forecast amounts."""
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=mock_forecast_data)
+        mock_response.raise_for_status = MagicMock()
+
+        mock_context = AsyncMock()
+        mock_context.__aenter__.return_value = mock_response
+        api_client._session.get = MagicMock(return_value=mock_context)
+
+        forecast = await api_client.get_forecast(55.6761, 12.5683)
+
+        precipitation = [entry["precipitation"] for entry in forecast["hourly"]]
+        assert precipitation == pytest.approx([0.0, 0.1, 0.1, 0])
 
     async def test_get_forecast_handles_missing_data(
         self,
