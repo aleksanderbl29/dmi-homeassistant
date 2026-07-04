@@ -284,12 +284,23 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if not backup_station_id or not selected_parameters:
                 continue
 
-            backup_observations = self._annotate_observations(
-                await self.api.get_observations(backup_station_id),
-                station_id=backup_station_id,
-                station_name=backup_station_name,
-                source_type=SOURCE_TYPE_BACKUP,
-            )
+            try:
+                backup_observations = self._annotate_observations(
+                    await self.api.get_observations(backup_station_id),
+                    station_id=backup_station_id,
+                    station_name=backup_station_name,
+                    source_type=SOURCE_TYPE_BACKUP,
+                )
+            except RateLimitExceeded:
+                # Preserve the coordinator-wide rate-limit cooldown behavior.
+                raise
+            except (CannotConnect, RequestTimeout, UpstreamError, TimeoutError) as err:
+                _LOGGER.warning(
+                    "Failed to fetch backup observations for station %s; skipping backup: %s",
+                    backup_station_id,
+                    err,
+                )
+                continue
 
             for parameter_id in selected_parameters:
                 backup_value = backup_observations.get(parameter_id)
