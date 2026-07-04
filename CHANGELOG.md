@@ -1,3 +1,18 @@
+# [1.2.0](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.1.1...v1.2.0) (2026-07-04)
+
+
+### Bug Fixes
+
+* **config-flow:** prevent duplicate backup parameters ([e7485d9](https://github.com/aleksanderbl29/dmi-homeassistant/commit/e7485d978bcb4b380b16f36ceb27e13c8cd073ff))
+* **config:** default backup station suffix on ([d7fd2e4](https://github.com/aleksanderbl29/dmi-homeassistant/commit/d7fd2e43ec26c1b696a324a1d73d08d1882a8c94))
+* **coordinator:** tolerate failed advanced backups ([fc0e542](https://github.com/aleksanderbl29/dmi-homeassistant/commit/fc0e54260bc30ae587e417af1c067d6f3792b496))
+* **sensor:** separate backup station suffix ([5fc6cb1](https://github.com/aleksanderbl29/dmi-homeassistant/commit/5fc6cb19d833ec0f359a55a4f5e2835af7237eec))
+
+
+### Features
+
+* **dmi:** simplify advanced backup sensor setup ([253f0b4](https://github.com/aleksanderbl29/dmi-homeassistant/commit/253f0b4a3e16985893b0f69aa3a9379feb459764))
+
 ## [1.1.1](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.1.0...v1.1.1) (2026-07-04)
 
 
