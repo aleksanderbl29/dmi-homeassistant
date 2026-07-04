@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.1.0...v1.1.1) (2026-07-04)
+
+
+### Bug Fixes
+
+* **forecast:** normalize precipitation and cloud cover ([c7a10f2](https://github.com/aleksanderbl29/dmi-homeassistant/commit/c7a10f210aa345ae38a8342ca09247d5ad4c4f1b))
+
 # [1.1.0](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.0.1...v1.1.0) (2026-07-02)
 
 
