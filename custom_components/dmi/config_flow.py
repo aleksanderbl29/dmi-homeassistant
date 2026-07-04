@@ -326,17 +326,23 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
         return station_options
 
     def _get_backup_parameter_ids(self, backup_station: Mapping[str, Any]) -> list[str]:
-        """Return supported backup parameters missing from the primary station."""
+        """Return supported backup parameters not already owned by the composite entry."""
         primary_station = self._get_station_by_id(str(self._advanced_primary[CONF_STATION_ID]))
         primary_parameters = {
             parameter_id
             for parameter_id in primary_station.get("parameterId", [])
             if parameter_id in SENSOR_TYPES_BY_KEY
         }
+        claimed_backup_parameters = {
+            parameter_id
+            for backup in self._advanced_backups
+            for parameter_id in backup.get(CONF_BACKUP_PARAMETERS, [])
+        }
+        unavailable_parameters = primary_parameters | claimed_backup_parameters
         backup_parameters = [
             parameter_id
             for parameter_id in backup_station.get("parameterId", [])
-            if parameter_id in SENSOR_TYPES_BY_KEY and parameter_id not in primary_parameters
+            if parameter_id in SENSOR_TYPES_BY_KEY and parameter_id not in unavailable_parameters
         ]
 
         return sorted(

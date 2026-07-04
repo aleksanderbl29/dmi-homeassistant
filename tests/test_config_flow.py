@@ -279,6 +279,124 @@ class TestDMIConfigFlow:
 
         assert result["errors"]["base"] == "no_backup_parameters"
 
+    async def test_advanced_flow_excludes_parameters_claimed_by_previous_backups(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test later backup stations only own still-unclaimed parameters."""
+        stations = [
+            {
+                "stationId": "06186",
+                "name": "Landbohojskolen",
+                "latitude": 55.68,
+                "longitude": 12.53,
+                "parameterId": ["temp_dry"],
+            },
+            {
+                "stationId": "06187",
+                "name": "Kobenhavns Toldbod",
+                "latitude": 55.69,
+                "longitude": 12.60,
+                "parameterId": ["radia_glob", "sun_last1h_glob"],
+            },
+            {
+                "stationId": "06070",
+                "name": "Aarhus Lufthavn",
+                "latitude": 56.30,
+                "longitude": 10.61,
+                "parameterId": ["radia_glob", "pressure_at_sea"],
+            },
+        ]
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
+            mock_api = MagicMock()
+            mock_api.get_stations = AsyncMock(return_value=stations)
+            mock_api_class.return_value = mock_api
+
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], _flow_menu_select(result, "advanced_primary")
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "06186", CONF_USE_COORDINATES: False},
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], {"backup_station_count": "2"}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "06187", CONF_BACKUP_STATION_NAME_SUFFIX: False},
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "06070", CONF_BACKUP_STATION_NAME_SUFFIX: False},
+            )
+
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        backups = result["data"][CONF_BACKUP_STATIONS]
+        assert backups[0][CONF_BACKUP_PARAMETERS] == ["radia_glob", "sun_last1h_glob"]
+        assert backups[1][CONF_BACKUP_PARAMETERS] == ["pressure_at_sea"]
+
+    async def test_advanced_flow_rejects_backup_with_only_claimed_parameters(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test a backup station is rejected when earlier backups claim all parameters."""
+        stations = [
+            {
+                "stationId": "06186",
+                "name": "Landbohojskolen",
+                "latitude": 55.68,
+                "longitude": 12.53,
+                "parameterId": ["temp_dry"],
+            },
+            {
+                "stationId": "06187",
+                "name": "Kobenhavns Toldbod",
+                "latitude": 55.69,
+                "longitude": 12.60,
+                "parameterId": ["radia_glob"],
+            },
+            {
+                "stationId": "06070",
+                "name": "Aarhus Lufthavn",
+                "latitude": 56.30,
+                "longitude": 10.61,
+                "parameterId": ["radia_glob", "temp_dry"],
+            },
+        ]
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
+            mock_api = MagicMock()
+            mock_api.get_stations = AsyncMock(return_value=stations)
+            mock_api_class.return_value = mock_api
+
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], _flow_menu_select(result, "advanced_primary")
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "06186", CONF_USE_COORDINATES: False},
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], {"backup_station_count": "2"}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "06187", CONF_BACKUP_STATION_NAME_SUFFIX: False},
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "06070", CONF_BACKUP_STATION_NAME_SUFFIX: False},
+            )
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["errors"]["base"] == "no_backup_parameters"
+
     async def test_normal_flow_duplicate_entry(
         self,
         hass: HomeAssistant,
