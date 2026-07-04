@@ -2,41 +2,41 @@
   "config": {
     "step": {
       "user": {
-        "title": "DMI Vejr Opsaetning",
-        "description": "Normal stationsopsaetning anbefales til de fleste brugere. Brug kun avanceret sammensat opsaetning, hvis du vil berige en primaer station med backup-sensorer fra en eller flere stationer.",
+        "title": "Opsætning af DMI Vejr",
+        "description": "Normal stationsopsætning anbefales til de fleste brugere. Brug kun avanceret sammensat opsætning, hvis du vil berige en primær station med backup-sensorer fra en eller flere andre stationer.",
         "menu_options": {
-          "station": "Normal stationsopsaetning",
-          "advanced_primary": "Avanceret sammensat opsaetning"
+          "station": "Normal stationsopsætning",
+          "advanced_primary": "Avanceret sammensat opsætning"
         }
       },
       "station": {
-        "title": "DMI Vejr Opsaetning",
-        "description": "Vaelg en vejrstation eller brug din Home Assistant placering til prognoser.",
+        "title": "Opsætning af DMI Vejr",
+        "description": "Vælg en vejrstation. Du kan eventuelt bruge din Home Assistant-placering til prognoser.",
         "data": {
           "station_id": "Vejrstation",
           "use_coordinates": "Brug Home Assistant koordinater til prognoser"
         }
       },
       "advanced_primary": {
-        "title": "Avanceret Sammensat Opsaetning",
-        "description": "Vaelg den primaere station til den sammensatte vejrkilde.",
+        "title": "Avanceret sammensat opsætning",
+        "description": "Vælg den primære station til den sammensatte vejrkilde.",
         "data": {
-          "station_id": "Primaer station",
+          "station_id": "Primær station",
           "use_coordinates": "Brug Home Assistant koordinater til prognoser"
         }
       },
       "advanced_backup_count": {
-        "title": "Antal Backupstationer",
+        "title": "Antal backupstationer",
         "data": {
           "backup_station_count": "Antal backupstationer"
         }
       },
       "advanced_backup_station": {
         "title": "Backupstation",
-        "description": "Vaelg backupstation {backup_index}.",
+        "description": "Vælg backupstation {backup_index}.",
         "data": {
           "station_id": "Backupstation",
-          "backup_station_name_suffix": "Tilfoej backupstationens navn til backup-sensorers enhedsnavne"
+          "backup_station_name_suffix": "Tilføj backupstationens navn til backup-sensorernes enhedsnavne"
         }
       }
     },
@@ -44,9 +44,9 @@
       "cannot_connect": "Kunne ikke oprette forbindelse til DMI API",
       "unknown": "Uventet fejl",
       "invalid_station": "Den valgte station er ugyldig",
-      "backup_matches_primary": "Backupstation maa ikke vaere den samme som den primaere station",
+      "backup_matches_primary": "Backupstationen må ikke være den samme som den primære station",
       "duplicate_backup_station": "Denne backupstation er allerede valgt",
-      "no_backup_parameters": "Der er ingen understoettede backup-parametre kun fra denne station"
+      "no_backup_parameters": "Der er ingen understøttede parametre, som kun findes på denne backupstation"
     },
     "abort": {
       "already_configured": "Denne station er allerede konfigureret"
@@ -55,7 +55,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "DMI Vejr Indstillinger",
+        "title": "Indstillinger for DMI Vejr",
         "data": {
           "update_interval": "Opdateringsinterval (minutter)",
           "include_forecast": "Inkluder prognosedata"
@@ -67,42 +67,42 @@
     "sensor": {
       "temp_dry": { "name": "Temperatur" },
       "temp_dew": { "name": "Dugpunkt" },
-      "temp_mean_past1h": { "name": "Temperatur Sidste Time" },
-      "temp_max_past1h": { "name": "Temperatur Maks Sidste Time" },
-      "temp_min_past1h": { "name": "Temperatur Min Sidste Time" },
-      "temp_max_past12h": { "name": "Temperatur Maks Sidste 12 Timer" },
-      "temp_min_past12h": { "name": "Temperatur Min Sidste 12 Timer" },
-      "temp_grass": { "name": "Graestemperatur" },
-      "temp_grass_mean_past1h": { "name": "Graestemperatur Sidste Time" },
-      "temp_grass_max_past1h": { "name": "Graestemperatur Maks Sidste Time" },
-      "temp_grass_min_past1h": { "name": "Graestemperatur Min Sidste Time" },
+      "temp_mean_past1h": { "name": "Middeltemperatur seneste time" },
+      "temp_max_past1h": { "name": "Maksimumtemperatur seneste time" },
+      "temp_min_past1h": { "name": "Minimumtemperatur seneste time" },
+      "temp_max_past12h": { "name": "Maksimumtemperatur seneste 12 timer" },
+      "temp_min_past12h": { "name": "Minimumtemperatur seneste 12 timer" },
+      "temp_grass": { "name": "Græstemperatur" },
+      "temp_grass_mean_past1h": { "name": "Middelgræstemperatur seneste time" },
+      "temp_grass_max_past1h": { "name": "Maksimal græstemperatur seneste time" },
+      "temp_grass_min_past1h": { "name": "Minimal græstemperatur seneste time" },
       "humidity": { "name": "Luftfugtighed" },
-      "humidity_past1h": { "name": "Luftfugtighed Sidste Time" },
+      "humidity_past1h": { "name": "Luftfugtighed seneste time" },
       "pressure": { "name": "Lufttryk" },
-      "pressure_at_sea": { "name": "Lufttryk Ved Havoverfladen" },
+      "pressure_at_sea": { "name": "Lufttryk ved havniveau" },
       "wind_speed": { "name": "Vindhastighed" },
-      "wind_speed_past1h": { "name": "Vindhastighed Sidste Time" },
-      "wind_max": { "name": "Vindstoed" },
+      "wind_speed_past1h": { "name": "Vindhastighed seneste time" },
+      "wind_max": { "name": "Vindstød" },
       "wind_min": { "name": "Minimumsvind" },
-      "wind_min_past1h": { "name": "Minimumsvind Sidste Time" },
-      "wind_max_per10min_past1h": { "name": "Maks Vind Per 10 Minutter Sidste Time" },
-      "wind_gust_always_past1h": { "name": "Vindstoed Sidste Time" },
+      "wind_min_past1h": { "name": "Minimumsvind seneste time" },
+      "wind_max_per10min_past1h": { "name": "Maksimal 10-minutters vind seneste time" },
+      "wind_gust_always_past1h": { "name": "Vindstød seneste time" },
       "wind_dir": { "name": "Vindretning" },
-      "wind_dir_past1h": { "name": "Vindretning Sidste Time" },
-      "precip_past1min": { "name": "Nedboer Sidste Minut" },
-      "precip_past10min": { "name": "Nedboer Sidste 10 Minutter" },
-      "precip_past1h": { "name": "Nedboer Sidste Time" },
-      "precip_dur_past10min": { "name": "Nedboersvarighed Sidste 10 Minutter" },
-      "precip_dur_past1h": { "name": "Nedboersvarighed Sidste Time" },
+      "wind_dir_past1h": { "name": "Vindretning seneste time" },
+      "precip_past1min": { "name": "Nedbør seneste minut" },
+      "precip_past10min": { "name": "Nedbør seneste 10 minutter" },
+      "precip_past1h": { "name": "Nedbør seneste time" },
+      "precip_dur_past10min": { "name": "Nedbørsvarighed seneste 10 minutter" },
+      "precip_dur_past1h": { "name": "Nedbørsvarighed seneste time" },
       "visibility": { "name": "Sigtbarhed" },
-      "visib_mean_last10min": { "name": "Sigtbarhed Sidste 10 Minutter" },
-      "cloud_cover": { "name": "Skydaekke" },
-      "cloud_height": { "name": "Skyhoejde" },
+      "visib_mean_last10min": { "name": "Middelsigtbarhed seneste 10 minutter" },
+      "cloud_cover": { "name": "Skydække" },
+      "cloud_height": { "name": "Skyhøjde" },
       "weather": { "name": "Vejr" },
-      "radia_glob": { "name": "Solindstraaling" },
-      "radia_glob_past1h": { "name": "Solindstraaling Sidste Time" },
-      "sun_last10min_glob": { "name": "Solskin Sidste 10 Minutter" },
-      "sun_last1h_glob": { "name": "Solskin Sidste Time" }
+      "radia_glob": { "name": "Solindstråling" },
+      "radia_glob_past1h": { "name": "Solindstråling seneste time" },
+      "sun_last10min_glob": { "name": "Solskin seneste 10 minutter" },
+      "sun_last1h_glob": { "name": "Solskin seneste time" }
     }
   }
 }
