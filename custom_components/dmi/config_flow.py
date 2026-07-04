@@ -236,7 +236,7 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
                     ),
                     vol.Optional(
                         CONF_BACKUP_STATION_NAME_SUFFIX,
-                        default=False,
+                        default=True,
                     ): BooleanSelector(),
                 }
             ),

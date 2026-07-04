@@ -144,6 +144,13 @@ class TestDMIConfigFlow:
                 result["flow_id"],
                 {"backup_station_count": "1"},
             )
+            suffix_field = next(
+                field
+                for field in result["data_schema"].schema
+                if field.schema == CONF_BACKUP_STATION_NAME_SUFFIX
+            )
+            assert suffix_field.default() is True
+
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"],
                 {
