@@ -51,6 +51,9 @@ coverage.xml
 .pytest_cache/
 cover/
 
+# Node dependencies for release tooling
+.github/node_modules/
+
 # Translations
 *.mo
 *.pot
