@@ -38,6 +38,13 @@
           "station_id": "Backupstation",
           "backup_station_name_suffix": "Tilføj backupstationens navn til backup-sensorernes enhedsnavne"
         }
+      },
+      "advanced_backup_parameters": {
+        "title": "Backupparametre",
+        "description": "Vælg hvilke nye sensorer der skal importeres fra backupstation {backup_station_name} ({backup_index}). Alle nye sensorer er valgt som standard.",
+        "data": {
+          "parameters": "Backupparametre"
+        }
       }
     },
     "error": {
@@ -102,7 +109,8 @@
       "radia_glob": { "name": "Solindstråling" },
       "radia_glob_past1h": { "name": "Solindstråling seneste time" },
       "sun_last10min_glob": { "name": "Solskin seneste 10 minutter" },
-      "sun_last1h_glob": { "name": "Solskin seneste time" }
+      "sun_last1h_glob": { "name": "Solskin seneste time" },
+      "last_fetch": { "name": "Seneste vellykkede opdatering" }
     }
   }
 }
