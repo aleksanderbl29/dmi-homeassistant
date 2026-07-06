@@ -1,68 +1,8 @@
 {
   "branches": ["main"],
   "plugins": [
-    [
-      "@semantic-release/commit-analyzer",
-      {
-        "preset": "conventionalcommits",
-        "parserOpts": {
-          "noteKeywords": ["BREAKING CHANGE", "BREAKING CHANGES", "RELEASE NOTES"]
-        }
-      }
-    ],
-    [
-      "@semantic-release/release-notes-generator",
-      {
-        "preset": "conventionalcommits",
-        "presetConfig": {
-          "types": [
-            {
-              "type": "feat",
-              "section": "User-facing improvements"
-            },
-            {
-              "type": "fix",
-              "section": "Fixes"
-            },
-            {
-              "type": "perf",
-              "section": "Performance"
-            },
-            {
-              "type": "docs",
-              "section": "Documentation"
-            },
-            {
-              "type": "refactor",
-              "section": "Code cleanup"
-            },
-            {
-              "type": "build",
-              "section": "Build and release"
-            },
-            {
-              "type": "ci",
-              "section": "Build and release"
-            },
-            {
-              "type": "chore",
-              "section": "Maintenance"
-            },
-            {
-              "type": "test",
-              "section": "Tests"
-            },
-            {
-              "type": "style",
-              "hidden": true
-            }
-          ]
-        },
-        "parserOpts": {
-          "noteKeywords": ["BREAKING CHANGE", "BREAKING CHANGES", "RELEASE NOTES"]
-        }
-      }
-    ],
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
     [
       "@semantic-release/changelog",
       {

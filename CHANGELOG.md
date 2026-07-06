@@ -1,5 +1,3 @@
-## [2.0.0](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.2.0...v2.0.0) (2026-07-06)
-
 # [1.2.0](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.1.1...v1.2.0) (2026-07-04)
 
 
