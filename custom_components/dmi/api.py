@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import aiohttp
@@ -11,6 +13,8 @@ from .const import FORECAST_URL, METOBS_URL
 
 _LOGGER = logging.getLogger(__name__)
 AUTH_PARAM_NAMES = frozenset({"api-key", "apikey", "token"})
+PAGE_SIZE = 1000
+OBSERVATION_PAGE_SIZE = 100
 
 
 class CannotConnect(Exception):
@@ -127,10 +131,21 @@ class DMIApiClient:
                     )
                 response.raise_for_status()
                 data = await response.json()
-                _LOGGER.debug("Received response with %d bytes", len(str(data)))
+                headers = response.headers
+                content_length = (
+                    headers.get("Content-Length") if isinstance(headers, Mapping) else None
+                )
+                if content_length is not None:
+                    _LOGGER.debug("Received response with Content-Length %s", content_length)
                 return data
         except RateLimitExceeded:
             raise
+        except asyncio.CancelledError as err:
+            _LOGGER.error("DMI API request was cancelled while waiting for a response")
+            raise RequestTimeout("Request cancelled while waiting for DMI API") from err
+        except aiohttp.ContentTypeError as err:
+            _LOGGER.error("Invalid JSON response from DMI API: %s", err)
+            raise UpstreamError(f"Invalid JSON response from DMI API: {err}") from err
         except aiohttp.ClientResponseError as err:
             if err.status == 429:
                 raise RateLimitExceeded("DMI API rate limit exceeded") from err
@@ -146,9 +161,51 @@ class DMIApiClient:
         except TimeoutError as err:
             _LOGGER.error("API timeout: %s", err)
             raise RequestTimeout(f"Request timeout: {err}") from err
-        except Exception as err:
-            _LOGGER.error("Unexpected API error: %s", err)
-            raise CannotConnect(f"Unexpected error: {err}") from err
+
+    def _merge_station_feature(
+        self,
+        stations_by_id: dict[str, dict[str, Any]],
+        feature: dict[str, Any],
+    ) -> None:
+        """Merge a station feature into the deduplicated station catalog."""
+        props = feature.get("properties", {})
+        geometry = feature.get("geometry", {})
+        coordinates = geometry.get("coordinates", [None, None])
+        station_id = props.get("stationId")
+
+        if not station_id:
+            return
+
+        station = {
+            "stationId": station_id,
+            "name": props.get("name"),
+            "longitude": coordinates[0] if len(coordinates) > 0 else None,
+            "latitude": coordinates[1] if len(coordinates) > 1 else None,
+            "type": props.get("type"),
+            "parameterId": self._normalize_parameter_ids(props.get("parameterId")),
+        }
+
+        existing = stations_by_id.get(str(station_id))
+        if existing is None:
+            stations_by_id[str(station_id)] = {
+                **station,
+                "_sort_key": self._station_sort_key(props),
+            }
+            return
+
+        merged_parameter_ids = existing["parameterId"][:]
+        for parameter_id in station["parameterId"]:
+            if parameter_id not in merged_parameter_ids:
+                merged_parameter_ids.append(parameter_id)
+
+        if self._station_sort_key(props) >= existing["_sort_key"]:
+            stations_by_id[str(station_id)] = {
+                **station,
+                "parameterId": merged_parameter_ids,
+                "_sort_key": self._station_sort_key(props),
+            }
+        else:
+            existing["parameterId"] = merged_parameter_ids
 
     async def get_stations(self, active_only: bool = True) -> list[dict[str, Any]]:
         """Fetch list of weather stations.
@@ -160,52 +217,24 @@ class DMIApiClient:
             List of station dictionaries with stationId, name, coordinates, etc.
         """
         url = f"{METOBS_URL}/collections/station/items"
-        params: dict[str, Any] = {"limit": 1000}
-        if active_only:
-            params["status"] = "Active"
-
-        data = await self._request(url, params)
-
+        offset = 0
         stations_by_id: dict[str, dict[str, Any]] = {}
-        for feature in data.get("features", []):
-            props = feature.get("properties", {})
-            geometry = feature.get("geometry", {})
-            coordinates = geometry.get("coordinates", [None, None])
-            station_id = props.get("stationId")
 
-            if not station_id:
-                continue
+        while True:
+            # DMI metObs items supports limit/offset pagination:
+            # https://www.dmi.dk/friedata/dokumentation/meteorological-observation-api
+            params: dict[str, Any] = {"limit": PAGE_SIZE, "offset": offset}
+            if active_only:
+                params["status"] = "Active"
 
-            station = {
-                "stationId": station_id,
-                "name": props.get("name"),
-                "longitude": coordinates[0] if len(coordinates) > 0 else None,
-                "latitude": coordinates[1] if len(coordinates) > 1 else None,
-                "type": props.get("type"),
-                "parameterId": self._normalize_parameter_ids(props.get("parameterId")),
-            }
+            data = await self._request(url, params)
+            features = data.get("features", [])
+            for feature in features:
+                self._merge_station_feature(stations_by_id, feature)
 
-            existing = stations_by_id.get(str(station_id))
-            if existing is None:
-                stations_by_id[str(station_id)] = {
-                    **station,
-                    "_sort_key": self._station_sort_key(props),
-                }
-                continue
-
-            merged_parameter_ids = existing["parameterId"][:]
-            for parameter_id in station["parameterId"]:
-                if parameter_id not in merged_parameter_ids:
-                    merged_parameter_ids.append(parameter_id)
-
-            if self._station_sort_key(props) >= existing["_sort_key"]:
-                stations_by_id[str(station_id)] = {
-                    **station,
-                    "parameterId": merged_parameter_ids,
-                    "_sort_key": self._station_sort_key(props),
-                }
-            else:
-                existing["parameterId"] = merged_parameter_ids
+            if len(features) < PAGE_SIZE:
+                break
+            offset += PAGE_SIZE
 
         return [
             {key: value for key, value in station.items() if key != "_sort_key"}
@@ -222,14 +251,19 @@ class DMIApiClient:
             Dictionary keyed by parameterId with value and observed timestamp.
         """
         url = f"{METOBS_URL}/collections/observation/items"
+        # DMI metObs observation items documents stationId, limit and offset.
+        # Do not add sortorder here; the live metObs API returns "Unknown sortorder".
+        # Do not paginate observations during HA setup; the endpoint can expose
+        # large historical result sets and first refresh must stay bounded.
+        # https://www.dmi.dk/friedata/dokumentation/meteorological-observation-api
         params = {
             "stationId": station_id,
-            "limit": 100,
+            "limit": OBSERVATION_PAGE_SIZE,
+            "offset": 0,
         }
 
         data = await self._request(url, params)
 
-        # Extract the latest observation per parameter
         observations: dict[str, Any] = {}
         for feature in data.get("features", []):
             props = feature.get("properties", {})
@@ -264,6 +298,8 @@ class DMIApiClient:
         coords = f"POINT({longitude} {latitude})"
 
         params = {
+            # DMI Forecast EDR position queries document coords, crs, parameter-name and f:
+            # https://www.dmi.dk/friedata/dokumentation/forecast-data-edr-api
             "coords": coords,
             "crs": "crs84",
             "parameter-name": "temperature-2m,wind-speed-10m,wind-dir-10m,relative-humidity-2m,total-precipitation,fraction-of-cloud-cover",
