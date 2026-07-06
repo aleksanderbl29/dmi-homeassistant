@@ -6,7 +6,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.13.2"
 dependencies = [
-    "aiohttp>=3.8.0",
+    "aiohttp>=3.9.0,<4.0.0",
 ]
 
 [project.optional-dependencies]
@@ -64,4 +64,3 @@ exclude_lines = [
     "raise NotImplementedError",
     "if TYPE_CHECKING:",
 ]
-

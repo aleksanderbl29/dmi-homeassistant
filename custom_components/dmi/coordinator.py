@@ -7,7 +7,6 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any
 
-import async_timeout
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -96,6 +95,9 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # doesn't turn into a retry storm via HA's own backoff mechanism.
         self._rate_limited_until: datetime | None = None
 
+        # Sensor platform tracks which observation keys already have entities.
+        self.known_sensor_keys: set[str] = set()
+
         super().__init__(
             hass,
             _LOGGER,
@@ -142,7 +144,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed("Still in rate-limit cooldown and no cached data yet")
 
         try:
-            async with async_timeout.timeout(30):
+            async with asyncio.timeout(30):
                 _LOGGER.debug(
                     "Updating DMI data for station %s (forecast enabled=%s, coords=%s,%s)",
                     self.station_id,
@@ -183,7 +185,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         # Don't swallow this one -- let the outer handler
                         # set the cooldown so future cycles back off too.
                         raise
-                    except Exception as err:
+                    except (CannotConnect, RequestTimeout, UpstreamError, TimeoutError) as err:
                         _LOGGER.warning("Failed to fetch forecast: %s", err)
                         # Continue without forecast data (non-rate-limit
                         # errors only; e.g. transient connection issue).
@@ -283,6 +285,8 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             }
             if not backup_station_id or not selected_parameters:
                 continue
+
+            await asyncio.sleep(REQUEST_STAGGER_SECONDS)
 
             try:
                 backup_observations = self._annotate_observations(

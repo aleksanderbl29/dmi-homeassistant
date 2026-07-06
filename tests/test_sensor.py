@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import EntityCategory
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -124,7 +125,7 @@ class TestDMISensor:
         )
 
         assert sensor.native_value == 240.0
-        assert sensor.entity_description.name == "Solar Radiation"
+        assert sensor.name == "Solar Radiation"
         assert sensor.extra_state_attributes["source_type"] == "backup"
         assert "Composite Weather Station" in sensor.device_info["model"]
 
@@ -172,7 +173,7 @@ class TestDMISensor:
             entity_description=description,
         )
 
-        assert sensor.entity_description.name == "Solar Radiation - Kobenhavns Toldbod"
+        assert sensor.name == "Solar Radiation - Kobenhavns Toldbod"
 
 
 class TestDMILastFetchSensor:
@@ -267,3 +268,48 @@ class TestDMISensorIntegration:
         state = hass.states.get("sensor.landbohojskolen_solar_radiation")
         assert state is not None
         assert state.attributes["source_station_id"] == "06187"
+
+    async def test_dynamic_sensor_registration_on_coordinator_update(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry: MockConfigEntry,
+        mock_dmi_api: MagicMock,
+    ) -> None:
+        """Test new parameters appear as sensors after a later coordinator refresh."""
+        observation_payloads: dict[str, dict[str, Any]] = {
+            "06180": {
+                "temp_dry": {"value": 15.5, "observed": "2024-01-15T12:00:00Z"},
+            },
+        }
+
+        async def get_observations(station_id: str) -> dict[str, Any]:
+            return observation_payloads[station_id]
+
+        mock_dmi_api.get_observations = AsyncMock(side_effect=get_observations)
+        mock_config_entry.add_to_hass(hass)
+
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        coordinator = hass.data[DOMAIN][mock_config_entry.entry_id]
+        coordinator.api.get_observations = AsyncMock(side_effect=get_observations)
+
+        assert hass.states.get("sensor.kobenhavns_lufthavn_temperature") is not None
+        assert hass.states.get("sensor.kobenhavns_lufthavn_solar_radiation") is None
+
+        observation_payloads["06180"]["radia_glob"] = {
+            "value": 240.0,
+            "observed": "2024-01-15T12:05:00Z",
+        }
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+        assert "radia_glob" in coordinator.data["observations"]
+        entity_registry = er.async_get(hass)
+        entity_id = entity_registry.async_get_entity_id(
+            "sensor",
+            DOMAIN,
+            f"{mock_config_entry.entry_id}_radia_glob",
+        )
+        assert entity_id is not None
+        assert hass.states.get(entity_id) is not None

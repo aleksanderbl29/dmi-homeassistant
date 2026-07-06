@@ -54,6 +54,32 @@ def _flow_menu_select(result: dict[str, Any], next_step_id: str) -> dict[str, st
     return {"next_step_id": next_step_id}
 
 
+def _select_all_backup_parameters(result: dict[str, Any]) -> dict[str, list[str]]:
+    """Select every available backup parameter in the current form."""
+    options = _selector_options(result, CONF_BACKUP_PARAMETERS)
+    return {CONF_BACKUP_PARAMETERS: [option["value"] for option in options]}
+
+
+def _selector_options(result: dict[str, Any], field_name: str) -> list[dict[str, str]]:
+    """Return selector options for a schema field."""
+    parameter_field = next(
+        field for field in result["data_schema"].schema if field.schema == field_name
+    )
+    selector = result["data_schema"].schema[parameter_field]
+    return list(selector.config["options"])
+
+
+def _field_default(result: dict[str, Any], field_name: str) -> Any:
+    """Return a schema field default."""
+    field = next(field for field in result["data_schema"].schema if field.schema == field_name)
+    return field.default()
+
+
+def _select_backup_parameters(parameter_ids: list[str]) -> dict[str, list[str]]:
+    """Return a backup parameter selection payload."""
+    return {CONF_BACKUP_PARAMETERS: parameter_ids}
+
+
 class TestDMIConfigFlow:
     """Test cases for DMIConfigFlow."""
 
@@ -102,7 +128,6 @@ class TestDMIConfigFlow:
     async def test_advanced_flow_creates_composite_entry(
         self,
         hass: HomeAssistant,
-        mock_stations: list[dict[str, Any]],
     ) -> None:
         """Test the advanced flow creates a composite entry."""
         advanced_stations = [
@@ -120,7 +145,6 @@ class TestDMIConfigFlow:
                 "longitude": 12.60,
                 "parameterId": ["radia_glob", "sun_last1h_glob", "temp_dry"],
             },
-            *mock_stations,
         ]
         with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
             mock_api = MagicMock()
@@ -144,6 +168,8 @@ class TestDMIConfigFlow:
                 result["flow_id"],
                 {"backup_station_count": "1"},
             )
+            backup_options = _selector_options(result, CONF_STATION_ID)
+            assert {option["value"] for option in backup_options} == {"06187"}
             suffix_field = next(
                 field
                 for field in result["data_schema"].schema
@@ -158,6 +184,14 @@ class TestDMIConfigFlow:
                     CONF_BACKUP_STATION_NAME_SUFFIX: True,
                 },
             )
+            assert _field_default(result, CONF_BACKUP_PARAMETERS) == [
+                "radia_glob",
+                "sun_last1h_glob",
+            ]
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {},
+            )
 
         assert result["type"] == FlowResultType.CREATE_ENTRY
         assert result["data"][CONF_SETUP_TYPE] == "advanced"
@@ -168,6 +202,212 @@ class TestDMIConfigFlow:
             "sun_last1h_glob",
         ]
         assert result["data"][CONF_BACKUP_STATIONS][0][CONF_BACKUP_STATION_NAME_SUFFIX] is True
+
+    async def test_advanced_flow_stores_selected_backup_parameter_subset(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test advanced flow stores exactly the backup parameters the user selects."""
+        stations = [
+            {
+                "stationId": "06186",
+                "name": "Landbohojskolen",
+                "latitude": 55.68,
+                "longitude": 12.53,
+                "parameterId": ["temp_dry"],
+            },
+            {
+                "stationId": "06187",
+                "name": "Kobenhavns Toldbod",
+                "latitude": 55.69,
+                "longitude": 12.60,
+                "parameterId": ["radia_glob", "sun_last1h_glob", "temp_dry"],
+            },
+        ]
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
+            mock_api = MagicMock()
+            mock_api.get_stations = AsyncMock(return_value=stations)
+            mock_api_class.return_value = mock_api
+
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], _flow_menu_select(result, "advanced_primary")
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "06186", CONF_USE_COORDINATES: False},
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], {"backup_station_count": "1"}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "06187", CONF_BACKUP_STATION_NAME_SUFFIX: False},
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                _select_backup_parameters(["radia_glob"]),
+            )
+
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert result["data"][CONF_BACKUP_STATIONS][0][CONF_BACKUP_PARAMETERS] == ["radia_glob"]
+
+    async def test_advanced_flow_filters_backup_station_options_to_new_parameters(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test backup station options only include stations with new parameters."""
+        stations = [
+            {
+                "stationId": "06186",
+                "name": "Landbohojskolen",
+                "latitude": 55.68,
+                "longitude": 12.53,
+                "parameterId": ["temp_dry", "humidity"],
+            },
+            {
+                "stationId": "06070",
+                "name": "Duplicate Parameters",
+                "latitude": 56.30,
+                "longitude": 10.61,
+                "parameterId": ["temp_dry"],
+            },
+            {
+                "stationId": "06187",
+                "name": "Solar Backup",
+                "latitude": 55.69,
+                "longitude": 12.60,
+                "parameterId": ["radia_glob"],
+            },
+            {
+                "stationId": "06188",
+                "name": "Sun Backup",
+                "latitude": 55.70,
+                "longitude": 12.61,
+                "parameterId": ["sun_last1h_glob", "temp_dry"],
+            },
+        ]
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
+            mock_api = MagicMock()
+            mock_api.get_stations = AsyncMock(return_value=stations)
+            mock_api_class.return_value = mock_api
+
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], _flow_menu_select(result, "advanced_primary")
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "06186", CONF_USE_COORDINATES: False},
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], {"backup_station_count": "1"}
+            )
+
+        backup_options = _selector_options(result, CONF_STATION_ID)
+        assert {option["value"] for option in backup_options} == {"06187", "06188"}
+
+    async def test_advanced_backup_count_is_capped_by_useful_station_count(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test backup count only offers useful backup station counts."""
+        stations = [
+            {
+                "stationId": "06186",
+                "name": "Landbohojskolen",
+                "latitude": 55.68,
+                "longitude": 12.53,
+                "parameterId": ["temp_dry"],
+            },
+            {
+                "stationId": "06187",
+                "name": "Kobenhavns Toldbod",
+                "latitude": 55.69,
+                "longitude": 12.60,
+                "parameterId": ["radia_glob"],
+            },
+            {
+                "stationId": "06070",
+                "name": "Aarhus Lufthavn",
+                "latitude": 56.30,
+                "longitude": 10.61,
+                "parameterId": ["temp_dry"],
+            },
+        ]
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
+            mock_api = MagicMock()
+            mock_api.get_stations = AsyncMock(return_value=stations)
+            mock_api_class.return_value = mock_api
+
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], _flow_menu_select(result, "advanced_primary")
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "06186", CONF_USE_COORDINATES: False},
+            )
+
+        count_options = _selector_options(result, "backup_station_count")
+        assert [option["value"] for option in count_options] == ["1"]
+
+    async def test_advanced_flow_rejects_empty_backup_parameter_selection(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test advanced flow rejects an empty backup parameter selection."""
+        stations = [
+            {
+                "stationId": "06186",
+                "name": "Landbohojskolen",
+                "latitude": 55.68,
+                "longitude": 12.53,
+                "parameterId": ["temp_dry"],
+            },
+            {
+                "stationId": "06187",
+                "name": "Kobenhavns Toldbod",
+                "latitude": 55.69,
+                "longitude": 12.60,
+                "parameterId": ["radia_glob", "sun_last1h_glob"],
+            },
+        ]
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
+            mock_api = MagicMock()
+            mock_api.get_stations = AsyncMock(return_value=stations)
+            mock_api_class.return_value = mock_api
+
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], _flow_menu_select(result, "advanced_primary")
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "06186", CONF_USE_COORDINATES: False},
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], {"backup_station_count": "1"}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "06187", CONF_BACKUP_STATION_NAME_SUFFIX: False},
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_BACKUP_PARAMETERS: []},
+            )
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["errors"]["base"] == "no_backup_parameters"
 
     async def test_advanced_flow_rejects_duplicate_or_primary_backup_station(
         self,
@@ -194,7 +434,7 @@ class TestDMIConfigFlow:
                 "name": "Aarhus Lufthavn",
                 "latitude": 56.30,
                 "longitude": 10.61,
-                "parameterId": ["temp_dry"],
+                "parameterId": ["pressure_at_sea"],
             },
         ]
         with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
@@ -215,11 +455,13 @@ class TestDMIConfigFlow:
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"], {"backup_station_count": "2"}
             )
-            result = await hass.config_entries.flow.async_configure(
-                result["flow_id"],
-                {CONF_STATION_ID: "06186", CONF_BACKUP_STATION_NAME_SUFFIX: False},
-            )
+            backup_options = _selector_options(result, CONF_STATION_ID)
+            assert {option["value"] for option in backup_options} == {"06070", "06187"}
 
+            flow = hass.config_entries.flow._progress[result["flow_id"]]
+            result = await flow.async_step_advanced_backup_station(
+                {CONF_STATION_ID: "06186", CONF_BACKUP_STATION_NAME_SUFFIX: False}
+            )
             assert result["errors"]["base"] == "backup_matches_primary"
 
             result = await hass.config_entries.flow.async_configure(
@@ -228,7 +470,10 @@ class TestDMIConfigFlow:
             )
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"],
-                {CONF_STATION_ID: "06187", CONF_BACKUP_STATION_NAME_SUFFIX: False},
+                _select_all_backup_parameters(result),
+            )
+            result = await flow.async_step_advanced_backup_station(
+                {CONF_STATION_ID: "06187", CONF_BACKUP_STATION_NAME_SUFFIX: False}
             )
 
         assert result["errors"]["base"] == "duplicate_backup_station"
@@ -237,7 +482,7 @@ class TestDMIConfigFlow:
         self,
         hass: HomeAssistant,
     ) -> None:
-        """Test backup stations need at least one primary-missing parameter."""
+        """Test flow stops early when no backup stations add new parameters."""
         stations = [
             {
                 "stationId": "06186",
@@ -268,13 +513,6 @@ class TestDMIConfigFlow:
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"],
                 {CONF_STATION_ID: "06186", CONF_USE_COORDINATES: False},
-            )
-            result = await hass.config_entries.flow.async_configure(
-                result["flow_id"], {"backup_station_count": "1"}
-            )
-            result = await hass.config_entries.flow.async_configure(
-                result["flow_id"],
-                {CONF_STATION_ID: "06187", CONF_BACKUP_STATION_NAME_SUFFIX: False},
             )
 
         assert result["errors"]["base"] == "no_backup_parameters"
@@ -331,7 +569,15 @@ class TestDMIConfigFlow:
             )
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"],
+                _select_all_backup_parameters(result),
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
                 {CONF_STATION_ID: "06070", CONF_BACKUP_STATION_NAME_SUFFIX: False},
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                _select_all_backup_parameters(result),
             )
 
         assert result["type"] == FlowResultType.CREATE_ENTRY
@@ -343,7 +589,7 @@ class TestDMIConfigFlow:
         self,
         hass: HomeAssistant,
     ) -> None:
-        """Test a backup station is rejected when earlier backups claim all parameters."""
+        """Test flow finishes when earlier backups claim all parameters."""
         stations = [
             {
                 "stationId": "06186",
@@ -391,11 +637,17 @@ class TestDMIConfigFlow:
             )
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"],
-                {CONF_STATION_ID: "06070", CONF_BACKUP_STATION_NAME_SUFFIX: False},
+                _select_all_backup_parameters(result),
             )
+            assert result["type"] == FlowResultType.FORM
+            assert result["step_id"] == "advanced_no_more_backups"
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["errors"]["base"] == "no_backup_parameters"
+            result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        backups = result["data"][CONF_BACKUP_STATIONS]
+        assert len(backups) == 1
+        assert backups[0][CONF_BACKUP_PARAMETERS] == ["radia_glob"]
 
     async def test_normal_flow_duplicate_entry(
         self,

@@ -38,6 +38,17 @@
           "station_id": "Backup station",
           "backup_station_name_suffix": "Append the backup station name to backup sensor entity names"
         }
+      },
+      "advanced_backup_parameters": {
+        "title": "Backup Parameters",
+        "description": "Choose which new sensors to import from backup station {backup_station_name} ({backup_index}). All new sensors are selected by default.",
+        "data": {
+          "parameters": "Backup parameters"
+        }
+      },
+      "advanced_no_more_backups": {
+        "title": "No More Backup Data Available",
+        "description": "The selected backup station already adds all supported sensors available from the remaining stations. Continue to finish setup with the backup station selections already made."
       }
     },
     "error": {
@@ -102,7 +113,8 @@
       "radia_glob": { "name": "Solar Radiation" },
       "radia_glob_past1h": { "name": "Solar Radiation Last Hour" },
       "sun_last10min_glob": { "name": "Sunshine Last 10 Minutes" },
-      "sun_last1h_glob": { "name": "Sunshine Last Hour" }
+      "sun_last1h_glob": { "name": "Sunshine Last Hour" },
+      "last_fetch": { "name": "Last Successful Update" }
     }
   }
 }

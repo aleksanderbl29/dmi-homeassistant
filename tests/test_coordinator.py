@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -29,7 +29,7 @@ from custom_components.dmi.const import (
     CONF_UPDATE_INTERVAL,
     DOMAIN,
 )
-from custom_components.dmi.coordinator import DMIDataUpdateCoordinator
+from custom_components.dmi.coordinator import REQUEST_STAGGER_SECONDS, DMIDataUpdateCoordinator
 
 
 class TestDMIDataUpdateCoordinator:
@@ -278,6 +278,46 @@ class TestDMIDataUpdateCoordinator:
             await advanced_coordinator._async_update_data()
 
         assert advanced_coordinator._rate_limited_until is not None
+
+    async def test_rate_limit_cooldown_serves_cached_data(
+        self,
+        coordinator: DMIDataUpdateCoordinator,
+        mock_api_client: MagicMock,
+    ) -> None:
+        """Test active cooldown skips API calls and serves cached data."""
+        from homeassistant.util import dt as dt_util
+
+        cached_data = {
+            "observations": {"temp_dry": {"value": 15.5, "observed": "2024-01-15T12:00:00Z"}},
+            "forecast": None,
+            "last_updated": "cached",
+        }
+        coordinator.data = cached_data
+        coordinator._rate_limited_until = dt_util.utcnow() + timedelta(minutes=1)
+
+        data = await coordinator._async_update_data()
+
+        assert data is cached_data
+        mock_api_client.get_observations.assert_not_called()
+        mock_api_client.get_forecast.assert_not_called()
+
+    async def test_advanced_update_staggers_backup_fetches(
+        self,
+        advanced_coordinator: DMIDataUpdateCoordinator,
+        mock_api_client: MagicMock,
+    ) -> None:
+        """Test backup observation fetches are staggered to avoid request bursts."""
+        with patch(
+            "custom_components.dmi.coordinator.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as mock_sleep:
+            await advanced_coordinator._async_update_data()
+
+        assert mock_sleep.await_count == 2
+        assert mock_sleep.await_args_list == [
+            call(REQUEST_STAGGER_SECONDS),
+            call(REQUEST_STAGGER_SECONDS),
+        ]
 
     async def test_async_update_data_without_forecast(
         self,

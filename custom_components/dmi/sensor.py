@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -25,6 +24,7 @@ from .const import (
     DOMAIN,
     LAST_FETCH_SENSOR,
     SENSOR_TYPES,
+    SENSOR_TYPES_BY_KEY,
     SETUP_TYPE_ADVANCED,
     SOURCE_TYPE_BACKUP,
 )
@@ -39,11 +39,9 @@ async def async_setup_entry(
     """Set up DMI Weather sensor entities from config entry."""
     coordinator: DMIDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
-    # Get the available parameters from the current observations
     observations = coordinator.data.get("observations", {}) if coordinator.data else {}
-    available_params = set(observations.keys())
+    coordinator.known_sensor_keys = set(observations.keys())
 
-    # Create sensors only for parameters the station actually reports
     entities: list[DMISensor | DMILastFetchSensor] = [
         DMILastFetchSensor(
             coordinator=coordinator,
@@ -51,8 +49,7 @@ async def async_setup_entry(
         )
     ]
     for description in SENSOR_TYPES:
-        # Only create sensor if station has this parameter
-        if description.key in available_params:
+        if description.key in coordinator.known_sensor_keys:
             entities.append(
                 DMISensor(
                     coordinator=coordinator,
@@ -62,6 +59,34 @@ async def async_setup_entry(
             )
 
     async_add_entities(entities, True)
+
+    @callback
+    def _async_handle_coordinator_update() -> None:
+        """Register newly available parameters as sensor entities."""
+        if coordinator.data is None:
+            return
+
+        current_params = set(coordinator.data.get("observations", {}).keys())
+        new_params = current_params - coordinator.known_sensor_keys
+        if not new_params:
+            return
+
+        new_entities = [
+            DMISensor(
+                coordinator=coordinator,
+                config_entry=config_entry,
+                entity_description=SENSOR_TYPES_BY_KEY[param_key],
+            )
+            for param_key in sorted(new_params)
+            if param_key in SENSOR_TYPES_BY_KEY
+        ]
+        if new_entities:
+            coordinator.known_sensor_keys.update(
+                entity.entity_description.key for entity in new_entities
+            )
+            async_add_entities(new_entities, True)
+
+    config_entry.async_on_unload(coordinator.async_add_listener(_async_handle_coordinator_update))
 
 
 class DMIBaseSensor(CoordinatorEntity[DMIDataUpdateCoordinator], SensorEntity):
@@ -108,23 +133,25 @@ class DMISensor(DMIBaseSensor):
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator, config_entry)
-        self.entity_description = self._description_with_source_suffix(entity_description)
+        self.entity_description = entity_description
 
         # Unique ID follows pattern: {entry_id}_{sensor_key}
         self._attr_unique_id = f"{config_entry.entry_id}_{entity_description.key}"
 
-    def _description_with_source_suffix(
-        self,
-        entity_description: SensorEntityDescription,
-    ) -> SensorEntityDescription:
-        """Append backup station name to backup-sourced sensor names when requested."""
+    @property
+    def name(self) -> str | None:
+        """Return the sensor name, including backup station suffix when configured."""
+        base_name = self.entity_description.name
+        if not isinstance(base_name, str):
+            return None
+
         if self._setup_type != SETUP_TYPE_ADVANCED or self.coordinator.data is None:
-            return entity_description
+            return base_name
 
         observations = self.coordinator.data.get("observations", {})
-        param_data = observations.get(entity_description.key, {})
+        param_data = observations.get(self.entity_description.key, {})
         if param_data.get(CONF_SOURCE_TYPE) != SOURCE_TYPE_BACKUP:
-            return entity_description
+            return base_name
 
         source_station_id = str(param_data.get(CONF_SOURCE_STATION_ID) or "")
         backup = next(
@@ -136,17 +163,14 @@ class DMISensor(DMIBaseSensor):
             None,
         )
         if not backup or not backup.get(CONF_BACKUP_STATION_NAME_SUFFIX, False):
-            return entity_description
+            return base_name
 
         source_station_name = str(
             backup.get(CONF_STATION_NAME)
             or param_data.get(CONF_SOURCE_STATION_NAME)
             or source_station_id
         )
-        return replace(
-            entity_description,
-            name=f"{entity_description.name} - {source_station_name}",
-        )
+        return f"{base_name} - {source_station_name}"
 
     @property
     def native_value(self) -> Any:

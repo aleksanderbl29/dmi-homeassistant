@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -13,6 +14,7 @@ from custom_components.dmi.api import (
     CannotConnect,
     DMIApiClient,
     RateLimitExceeded,
+    RequestTimeout,
     UpstreamError,
 )
 from custom_components.dmi.const import BASE_URL, FORECAST_URL, METOBS_URL
@@ -149,6 +151,134 @@ class TestDMIApiClient:
         assert stations[0]["longitude"] == 12.6455
         assert stations[0]["parameterId"] == ["temp_dry", "humidity", "wind_speed"]
 
+    async def test_get_stations_paginates_with_offset(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test station discovery paginates with offset until a partial page."""
+        first_page_features = [
+            {
+                "properties": {
+                    "stationId": f"{index:05d}",
+                    "name": f"Station {index}",
+                    "parameterId": ["temp_dry"],
+                },
+                "geometry": {"coordinates": [12.0, 55.0]},
+            }
+            for index in range(1000)
+        ]
+        second_page_features = [
+            {
+                "properties": {
+                    "stationId": f"{index:05d}",
+                    "name": f"Station {index}",
+                    "parameterId": ["temp_dry"],
+                },
+                "geometry": {"coordinates": [12.1, 55.1]},
+            }
+            for index in range(1000, 1050)
+        ]
+
+        responses = [
+            {"features": first_page_features},
+            {"features": second_page_features},
+        ]
+        response_index = 0
+
+        async def json_side_effect() -> dict[str, Any]:
+            nonlocal response_index
+            payload = responses[response_index]
+            response_index += 1
+            return payload
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json = AsyncMock(side_effect=json_side_effect)
+
+        mock_context = AsyncMock()
+        mock_context.__aenter__.return_value = mock_response
+        api_client._session.get = MagicMock(return_value=mock_context)
+
+        stations = await api_client.get_stations(active_only=True)
+
+        assert len(stations) == 1050
+        assert api_client._session.get.call_count == 2
+        first_call_params = api_client._session.get.call_args_list[0].kwargs["params"]
+        second_call_params = api_client._session.get.call_args_list[1].kwargs["params"]
+        assert first_call_params["offset"] == 0
+        assert second_call_params["offset"] == 1000
+
+    async def test_get_stations_pagination_merges_duplicate_ids_across_pages(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test duplicate station ids spanning pages are still merged."""
+        first_page = {
+            "features": [
+                {
+                    "properties": {
+                        "stationId": "06180",
+                        "name": "Old Record",
+                        "parameterId": ["temp_dry"],
+                        "validFrom": "1983-06-16T00:00:00Z",
+                        "validTo": "2019-01-15T13:34:48Z",
+                    },
+                    "geometry": {"coordinates": [12.6000, 55.6000]},
+                },
+                *[
+                    {
+                        "properties": {
+                            "stationId": f"{index:05d}",
+                            "name": f"Station {index}",
+                            "parameterId": ["temp_dry"],
+                            "validTo": None,
+                        },
+                        "geometry": {"coordinates": [12.0, 55.0]},
+                    }
+                    for index in range(999)
+                ],
+            ],
+        }
+        second_page = {
+            "features": [
+                {
+                    "properties": {
+                        "stationId": "06180",
+                        "name": "Current Record",
+                        "parameterId": ["humidity"],
+                        "validFrom": "2019-01-15T13:34:48Z",
+                        "validTo": None,
+                    },
+                    "geometry": {"coordinates": [12.6455, 55.614]},
+                },
+            ],
+        }
+
+        responses = [first_page, second_page]
+        response_index = 0
+
+        async def json_side_effect() -> dict[str, Any]:
+            nonlocal response_index
+            payload = responses[response_index]
+            response_index += 1
+            return payload
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json = AsyncMock(side_effect=json_side_effect)
+
+        mock_context = AsyncMock()
+        mock_context.__aenter__.return_value = mock_response
+        api_client._session.get = MagicMock(return_value=mock_context)
+
+        stations = await api_client.get_stations()
+
+        station_06180 = next(station for station in stations if station["stationId"] == "06180")
+        assert station_06180["name"] == "Current Record"
+        assert station_06180["parameterId"] == ["temp_dry", "humidity"]
+
     # --- get_observations tests ---
 
     async def test_get_observations_success(
@@ -209,6 +339,104 @@ class TestDMIApiClient:
 
         assert observations["temp_dry"]["value"] == 15.5
         assert observations["temp_dry"]["observed"] == "2024-01-15T12:00:00Z"
+
+    async def test_get_observations_does_not_send_unsupported_sortorder(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test observations avoid unsupported DMI sortorder parameters."""
+        mock_data = {
+            "features": [
+                {
+                    "properties": {
+                        "parameterId": "temp_dry",
+                        "value": 15.5,
+                        "observed": "2024-01-15T12:00:00Z",
+                    },
+                },
+            ],
+        }
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=mock_data)
+        mock_response.raise_for_status = MagicMock()
+
+        mock_context = AsyncMock()
+        mock_context.__aenter__.return_value = mock_response
+        api_client._session.get = MagicMock(return_value=mock_context)
+
+        await api_client.get_observations("06180")
+
+        params = api_client._session.get.call_args.kwargs["params"]
+        assert "sortorder" not in params
+        assert params["offset"] == 0
+
+    async def test_get_observations_keeps_newest_when_older_rows_arrive_first(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test merge logic keeps the newest temp_dry even if older rows appear first."""
+        mock_data = {
+            "features": [
+                {
+                    "properties": {
+                        "parameterId": "temp_dry",
+                        "value": 14.0,
+                        "observed": "2024-01-15T11:00:00Z",
+                    },
+                },
+                {
+                    "properties": {
+                        "parameterId": "temp_dry",
+                        "value": 15.5,
+                        "observed": "2024-01-15T12:00:00Z",
+                    },
+                },
+            ],
+        }
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=mock_data)
+        mock_response.raise_for_status = MagicMock()
+
+        mock_context = AsyncMock()
+        mock_context.__aenter__.return_value = mock_response
+        api_client._session.get = MagicMock(return_value=mock_context)
+
+        observations = await api_client.get_observations("06180")
+
+        assert observations["temp_dry"]["value"] == 15.5
+
+    async def test_get_observations_does_not_paginate_full_pages(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test observation fetch stays bounded even when DMI returns a full page."""
+        mock_data = {
+            "features": [
+                {
+                    "properties": {
+                        "parameterId": f"param_{index}",
+                        "value": index,
+                        "observed": "2024-01-15T12:00:00Z",
+                    },
+                }
+                for index in range(100)
+            ],
+        }
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=mock_data)
+        mock_response.raise_for_status = MagicMock()
+
+        mock_context = AsyncMock()
+        mock_context.__aenter__.return_value = mock_response
+        api_client._session.get = MagicMock(return_value=mock_context)
+
+        observations = await api_client.get_observations("06180")
+
+        assert len(observations) == 100
+        assert api_client._session.get.call_count == 1
 
     async def test_get_observations_uses_no_key_opendata_endpoint(
         self,
@@ -482,19 +710,31 @@ class TestDMIApiClient:
         mock_context.__aenter__.side_effect = TimeoutError("Request timed out")
         api_client._session.get = MagicMock(return_value=mock_context)
 
-        with pytest.raises(CannotConnect):
+        with pytest.raises(RequestTimeout):
+            await api_client.get_stations()
+
+    async def test_cancelled_request_becomes_request_timeout(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test cancelled outbound requests surface as retryable request timeouts."""
+        mock_context = AsyncMock()
+        mock_context.__aenter__.side_effect = asyncio.CancelledError
+        api_client._session.get = MagicMock(return_value=mock_context)
+
+        with pytest.raises(RequestTimeout, match="Request cancelled"):
             await api_client.get_stations()
 
     async def test_unexpected_error(
         self,
         api_client: DMIApiClient,
     ) -> None:
-        """Test unexpected error handling."""
+        """Test unexpected errors propagate instead of being wrapped."""
         mock_context = AsyncMock()
-        mock_context.__aenter__.side_effect = Exception("Unexpected error")
+        mock_context.__aenter__.side_effect = ValueError("Unexpected error")
         api_client._session.get = MagicMock(return_value=mock_context)
 
-        with pytest.raises(CannotConnect):
+        with pytest.raises(ValueError, match="Unexpected error"):
             await api_client.get_stations()
 
     async def test_request_rejects_auth_query_params(
