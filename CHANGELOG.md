@@ -1,3 +1,18 @@
+# [1.3.0](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.2.0...v1.3.0) (2026-07-06)
+
+
+### Bug Fixes
+
+* **api:** paginate stations and sort observations ([0d3fe48](https://github.com/aleksanderbl29/dmi-homeassistant/commit/0d3fe48b75604a17677af55db63cfa625d10f871))
+* **coordinator:** stagger backup observation requests ([c5aba40](https://github.com/aleksanderbl29/dmi-homeassistant/commit/c5aba4049120ae99a9ea45e4d185ef38cc28c4c8))
+
+
+### Features
+
+* **config-flow:** finish when backups add all data ([c0f824b](https://github.com/aleksanderbl29/dmi-homeassistant/commit/c0f824beee93d46cb7168b79c9d4f00fd9ff8738))
+* **config-flow:** let users choose backup parameters ([4ece974](https://github.com/aleksanderbl29/dmi-homeassistant/commit/4ece974fa1f7b17498953ac3c2f376c581f7bd3f))
+* **sensor:** add dynamic observation sensors ([294548b](https://github.com/aleksanderbl29/dmi-homeassistant/commit/294548b7b283e1624ab3d64d58bb2316a436c1da))
+
 # [1.2.0](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.1.1...v1.2.0) (2026-07-04)
 
 
