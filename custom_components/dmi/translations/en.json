@@ -45,6 +45,10 @@
         "data": {
           "parameters": "Backup parameters"
         }
+      },
+      "advanced_no_more_backups": {
+        "title": "No More Backup Data Available",
+        "description": "The selected backup station already adds all supported sensors available from the remaining stations. Continue to finish setup with the backup station selections already made."
       }
     },
     "error": {

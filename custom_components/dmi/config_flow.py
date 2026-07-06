@@ -230,6 +230,8 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
 
         backup_station_options = self._build_backup_station_options()
         if not backup_station_options:
+            if self._advanced_backups:
+                return await self.async_step_advanced_no_more_backups()
             return self.async_show_form(
                 step_id="advanced_backup_station",
                 data_schema=vol.Schema({}),
@@ -301,6 +303,8 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._advanced_current_backup_index += 1
                 if self._advanced_current_backup_index >= self._advanced_backup_count:
                     return await self._async_create_advanced_entry()
+                if not self._get_available_backup_stations():
+                    return await self.async_step_advanced_no_more_backups()
                 return await self.async_step_advanced_backup_station()
 
         return self.async_show_form(
@@ -326,6 +330,18 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
                     self._advanced_pending_backup.get(CONF_STATION_NAME) or ""
                 ),
             },
+        )
+
+    async def async_step_advanced_no_more_backups(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Finish advanced setup when no remaining station can add new data."""
+        if user_input is not None:
+            return await self._async_create_advanced_entry()
+
+        return self.async_show_form(
+            step_id="advanced_no_more_backups",
+            data_schema=vol.Schema({}),
         )
 
     async def _async_create_advanced_entry(self) -> ConfigFlowResult:

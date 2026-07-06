@@ -589,7 +589,7 @@ class TestDMIConfigFlow:
         self,
         hass: HomeAssistant,
     ) -> None:
-        """Test later backup step stops when earlier backups claim all parameters."""
+        """Test flow finishes when earlier backups claim all parameters."""
         stations = [
             {
                 "stationId": "06186",
@@ -639,10 +639,15 @@ class TestDMIConfigFlow:
                 result["flow_id"],
                 _select_all_backup_parameters(result),
             )
+            assert result["type"] == FlowResultType.FORM
+            assert result["step_id"] == "advanced_no_more_backups"
 
-        assert result["type"] == FlowResultType.FORM
-        assert result["step_id"] == "advanced_backup_station"
-        assert result["errors"]["base"] == "no_backup_parameters"
+            result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        backups = result["data"][CONF_BACKUP_STATIONS]
+        assert len(backups) == 1
+        assert backups[0][CONF_BACKUP_PARAMETERS] == ["radia_glob"]
 
     async def test_normal_flow_duplicate_entry(
         self,

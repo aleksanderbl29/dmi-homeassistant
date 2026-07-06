@@ -45,6 +45,10 @@
         "data": {
           "parameters": "Backupparametre"
         }
+      },
+      "advanced_no_more_backups": {
+        "title": "Ikke flere backupdata tilgængelige",
+        "description": "Den valgte backupstation tilføjer allerede alle understøttede sensorer, der er tilgængelige fra de resterende stationer. Fortsæt for at afslutte opsætningen med de backupstationer, der allerede er valgt."
       }
     },
     "error": {
