@@ -17,7 +17,7 @@ from custom_components.dmi.api import (
     RequestTimeout,
     UpstreamError,
 )
-from custom_components.dmi.const import BASE_URL, FORECAST_URL, METOBS_URL
+from custom_components.dmi.const import BASE_URL, FORECAST_URL, METOBS_URL, OCEANOBS_URL
 
 
 class TestDMIApiClient:
@@ -53,6 +53,7 @@ class TestDMIApiClient:
         assert stations[0]["name"] == "Københavns Lufthavn"
         assert stations[0]["latitude"] == 55.614
         assert stations[0]["longitude"] == 12.6455
+        assert stations[0]["validTo"] == "2019-01-15T13:34:48Z"
 
     async def test_get_stations_empty_response(
         self,
@@ -71,6 +72,46 @@ class TestDMIApiClient:
         stations = await api_client.get_stations()
 
         assert stations == []
+
+    async def test_get_sea_stations_uses_oceanobs_endpoint(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test tide-gauge discovery uses the oceanObs station collection."""
+        api_client._request = AsyncMock(return_value={"features": []})
+
+        stations = await api_client.get_sea_stations()
+
+        assert stations == []
+        api_client._request.assert_awaited_once_with(
+            f"{OCEANOBS_URL}/collections/station/items",
+            {"limit": 1000, "offset": 0, "status": "Active"},
+        )
+
+    async def test_get_sea_stations_exposes_validity_for_current_station_filtering(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test station validity is retained so ended gauges can be hidden."""
+        api_client._request = AsyncMock(
+            return_value={
+                "features": [
+                    {
+                        "properties": {
+                            "stationId": "20002",
+                            "name": "Old Gauge",
+                            "parameterId": ["sealev_dvr"],
+                            "validTo": "2021-01-06T00:00:00Z",
+                        },
+                        "geometry": {"coordinates": [10.59, 57.71]},
+                    }
+                ]
+            }
+        )
+
+        stations = await api_client.get_sea_stations()
+
+        assert stations[0]["validTo"] == "2021-01-06T00:00:00Z"
 
     async def test_get_stations_filters_invalid(
         self,
@@ -280,6 +321,68 @@ class TestDMIApiClient:
         assert station_06180["parameterId"] == ["temp_dry", "humidity"]
 
     # --- get_observations tests ---
+
+    async def test_get_sea_observations_preserves_quality_metadata(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test sea observations include the newest values and QC metadata."""
+        api_client._request = AsyncMock(
+            return_value={
+                "features": [
+                    {
+                        "properties": {
+                            "parameterId": "sealev_dvr",
+                            "value": 26.0,
+                            "observed": "2026-07-24T15:40:00Z",
+                            "created": "2026-07-24T15:41:44Z",
+                            "qcStatus": "auto",
+                        }
+                    },
+                    {
+                        "properties": {
+                            "parameterId": "sealev_dvr",
+                            "value": 25.0,
+                            "observed": "2026-07-24T15:30:00Z",
+                            "qcStatus": "manual",
+                        }
+                    },
+                    {
+                        "properties": {
+                            "parameterId": "tw",
+                            "value": 18.2,
+                            "observed": "2026-07-24T15:40:00Z",
+                            "qcStatus": "auto",
+                        }
+                    },
+                ]
+            }
+        )
+
+        observations = await api_client.get_sea_observations("30017")
+
+        assert observations == {
+            "sealev_dvr": {
+                "value": 26.0,
+                "observed": "2026-07-24T15:40:00Z",
+                "created": "2026-07-24T15:41:44Z",
+                "qc_status": "auto",
+            },
+            "tw": {
+                "value": 18.2,
+                "observed": "2026-07-24T15:40:00Z",
+                "qc_status": "auto",
+            },
+        }
+        api_client._request.assert_awaited_once_with(
+            f"{OCEANOBS_URL}/collections/observation/items",
+            {
+                "stationId": "30017",
+                "limit": 100,
+                "offset": 0,
+                "sortorder": "observed,DESC",
+            },
+        )
 
     async def test_get_observations_success(
         self,

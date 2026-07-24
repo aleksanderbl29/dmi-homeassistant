@@ -9,7 +9,7 @@ from typing import Any
 
 import aiohttp
 
-from .const import FORECAST_URL, METOBS_URL
+from .const import FORECAST_URL, METOBS_URL, OCEANOBS_URL
 
 _LOGGER = logging.getLogger(__name__)
 AUTH_PARAM_NAMES = frozenset({"api-key", "apikey", "token"})
@@ -183,6 +183,7 @@ class DMIApiClient:
             "latitude": coordinates[1] if len(coordinates) > 1 else None,
             "type": props.get("type"),
             "parameterId": self._normalize_parameter_ids(props.get("parameterId")),
+            "validTo": props.get("validTo"),
         }
 
         existing = stations_by_id.get(str(station_id))
@@ -207,22 +208,18 @@ class DMIApiClient:
         else:
             existing["parameterId"] = merged_parameter_ids
 
-    async def get_stations(self, active_only: bool = True) -> list[dict[str, Any]]:
-        """Fetch list of weather stations.
-
-        Args:
-            active_only: If True, only return active stations.
-
-        Returns:
-            List of station dictionaries with stationId, name, coordinates, etc.
-        """
-        url = f"{METOBS_URL}/collections/station/items"
+    async def _get_stations(
+        self,
+        api_url: str,
+        *,
+        active_only: bool,
+    ) -> list[dict[str, Any]]:
+        """Fetch and normalize a station catalog."""
+        url = f"{api_url}/collections/station/items"
         offset = 0
         stations_by_id: dict[str, dict[str, Any]] = {}
 
         while True:
-            # DMI metObs items supports limit/offset pagination:
-            # https://www.dmi.dk/friedata/dokumentation/meteorological-observation-api
             params: dict[str, Any] = {"limit": PAGE_SIZE, "offset": offset}
             if active_only:
                 params["status"] = "Active"
@@ -240,6 +237,50 @@ class DMIApiClient:
             {key: value for key, value in station.items() if key != "_sort_key"}
             for station in stations_by_id.values()
         ]
+
+    async def get_stations(self, active_only: bool = True) -> list[dict[str, Any]]:
+        """Fetch list of weather stations.
+
+        Args:
+            active_only: If True, only return active stations.
+
+        Returns:
+            List of station dictionaries with stationId, name, coordinates, etc.
+        """
+        # DMI metObs items supports limit/offset pagination:
+        # https://www.dmi.dk/friedata/dokumentation/meteorological-observation-api
+        return await self._get_stations(METOBS_URL, active_only=active_only)
+
+    async def get_sea_stations(self, active_only: bool = True) -> list[dict[str, Any]]:
+        """Fetch the list of oceanographic tide-gauge stations."""
+        # DMI oceanObs uses the same OGC station schema as metObs:
+        # https://www.dmi.dk/friedata/dokumentation/apis/oceanographic-observation-and-tidewater-api
+        return await self._get_stations(OCEANOBS_URL, active_only=active_only)
+
+    @staticmethod
+    def _parse_observations(data: dict[str, Any]) -> dict[str, Any]:
+        """Return the newest reading for every parameter in a response."""
+        observations: dict[str, Any] = {}
+        for feature in data.get("features", []):
+            props = feature.get("properties", {})
+            param_id = props.get("parameterId")
+            observed = props.get("observed")
+
+            if param_id and (
+                param_id not in observations
+                or str(observed or "") > str(observations[param_id].get("observed") or "")
+            ):
+                observation = {
+                    "value": props.get("value"),
+                    "observed": observed,
+                }
+                if props.get("created") is not None:
+                    observation["created"] = props["created"]
+                if props.get("qcStatus") is not None:
+                    observation["qc_status"] = props["qcStatus"]
+                observations[param_id] = observation
+
+        return observations
 
     async def get_observations(self, station_id: str) -> dict[str, Any]:
         """Fetch latest observations for a station.
@@ -264,21 +305,22 @@ class DMIApiClient:
 
         data = await self._request(url, params)
 
-        observations: dict[str, Any] = {}
-        for feature in data.get("features", []):
-            props = feature.get("properties", {})
-            param_id = props.get("parameterId")
-            observed = props.get("observed")
+        return self._parse_observations(data)
 
-            if param_id:
-                # Only keep if this is newer than what we have
-                if param_id not in observations or observed > observations[param_id]["observed"]:
-                    observations[param_id] = {
-                        "value": props.get("value"),
-                        "observed": observed,
-                    }
+    async def get_sea_observations(self, station_id: str) -> dict[str, Any]:
+        """Fetch the latest sea-level and water-temperature observations."""
+        url = f"{OCEANOBS_URL}/collections/observation/items"
+        # oceanObs explicitly supports sorting observations. A descending page
+        # ensures all currently reported parameters are found in one bounded request.
+        params = {
+            "stationId": station_id,
+            "limit": OBSERVATION_PAGE_SIZE,
+            "offset": 0,
+            "sortorder": "observed,DESC",
+        }
 
-        return observations
+        data = await self._request(url, params)
+        return self._parse_observations(data)
 
     async def get_forecast(self, latitude: float, longitude: float) -> dict[str, Any]:
         """Fetch forecast data for coordinates.

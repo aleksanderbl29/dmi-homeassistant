@@ -13,6 +13,7 @@ ATTRIBUTION = "Data provided by DMI Open Data"
 # API URLs
 BASE_URL = "https://opendataapi.dmi.dk"
 METOBS_URL = f"{BASE_URL}/v2/metObs"
+OCEANOBS_URL = f"{BASE_URL}/v2/oceanObs"
 FORECAST_URL = f"{BASE_URL}/v1/forecastedr"
 
 # Update interval in seconds (10 minutes)
@@ -37,6 +38,7 @@ CONF_SOURCE_TYPE = "source_type"
 
 SETUP_TYPE_NORMAL = "normal"
 SETUP_TYPE_ADVANCED = "advanced"
+SETUP_TYPE_SEA = "sea"
 SOURCE_TYPE_PRIMARY = "primary"
 SOURCE_TYPE_BACKUP = "backup"
 
@@ -320,6 +322,41 @@ SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
 
 SENSOR_TYPES_BY_KEY: dict[str, SensorEntityDescription] = {
     description.key: description for description in SENSOR_TYPES
+}
+
+SEA_SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
+    _sensor(
+        "sealev_dvr",
+        "Sea Level DVR90",
+        native_unit_of_measurement="cm",
+        device_class=SensorDeviceClass.DISTANCE,
+        icon="mdi:waves-arrow-up",
+    ),
+    _sensor(
+        "sealev_ln",
+        "Sea Level Local Reference",
+        native_unit_of_measurement="cm",
+        device_class=SensorDeviceClass.DISTANCE,
+        icon="mdi:waves-arrow-up",
+    ),
+    _sensor(
+        "sea_reg",
+        "Sea Level Registration",
+        native_unit_of_measurement="cm",
+        device_class=SensorDeviceClass.DISTANCE,
+        icon="mdi:waves-arrow-up",
+    ),
+    _sensor(
+        "tw",
+        "Water Temperature",
+        native_unit_of_measurement="°C",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        icon="mdi:thermometer-water",
+    ),
+)
+
+SEA_SENSOR_TYPES_BY_KEY: dict[str, SensorEntityDescription] = {
+    description.key: description for description in SEA_SENSOR_TYPES
 }
 
 LAST_FETCH_SENSOR = SensorEntityDescription(
