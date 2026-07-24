@@ -21,6 +21,7 @@ from custom_components.dmi.const import (
     CONF_STATION_NAME,
     DOMAIN,
     LAST_FETCH_SENSOR,
+    SEA_SENSOR_TYPES,
     SENSOR_TYPES,
 )
 from custom_components.dmi.coordinator import DMIDataUpdateCoordinator
@@ -234,6 +235,21 @@ class TestSensorTypes:
         assert weather.name == "Weather"
         assert weather.state_class is None
 
+    def test_sea_sensor_catalog_contains_all_ocean_parameters(self) -> None:
+        """Test every documented ocean observation has a sensor definition."""
+        assert {sensor.key for sensor in SEA_SENSOR_TYPES} == {
+            "sealev_dvr",
+            "sealev_ln",
+            "sea_reg",
+            "tw",
+        }
+        sea_level = next(s for s in SEA_SENSOR_TYPES if s.key == "sealev_dvr")
+        water_temperature = next(s for s in SEA_SENSOR_TYPES if s.key == "tw")
+        assert sea_level.native_unit_of_measurement == "cm"
+        assert sea_level.device_class == SensorDeviceClass.DISTANCE
+        assert water_temperature.native_unit_of_measurement == "°C"
+        assert water_temperature.device_class == SensorDeviceClass.TEMPERATURE
+
 
 class TestDMISensorIntegration:
     """Integration tests for DMI sensor entities."""
@@ -313,3 +329,54 @@ class TestDMISensorIntegration:
         )
         assert entity_id is not None
         assert hass.states.get(entity_id) is not None
+
+    async def test_sea_entry_creates_all_available_ocean_sensors(
+        self,
+        hass: HomeAssistant,
+        mock_dmi_api: MagicMock,
+    ) -> None:
+        """Test sea entries create sensors only for available ocean parameters."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Korsør",
+            data={
+                "setup_type": "sea",
+                CONF_STATION_ID: "30017",
+                CONF_STATION_NAME: "Korsør",
+                "latitude": 55.33,
+                "longitude": 11.14,
+                "use_coordinates": False,
+            },
+            options={"update_interval": 10, "include_forecast": True},
+            unique_id="dmi_sea_30017",
+        )
+        mock_dmi_api.get_sea_observations = AsyncMock(
+            return_value={
+                "sealev_dvr": {
+                    "value": 26.0,
+                    "observed": "2026-07-24T15:40:00Z",
+                    "created": "2026-07-24T15:41:44Z",
+                    "qc_status": "auto",
+                },
+                "tw": {
+                    "value": 18.2,
+                    "observed": "2026-07-24T15:40:00Z",
+                    "qc_status": "auto",
+                },
+            }
+        )
+        entry.add_to_hass(hass)
+
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        sea_level = hass.states.get("sensor.korsor_sea_level_dvr90")
+        water_temperature = hass.states.get("sensor.korsor_water_temperature")
+        assert sea_level is not None
+        assert sea_level.state == "26.0"
+        assert sea_level.attributes["quality_control_status"] == "auto"
+        assert sea_level.attributes["created_time"] == "2026-07-24T15:41:44Z"
+        assert water_temperature is not None
+        assert hass.states.get("weather.korsor") is None
+        mock_dmi_api.get_observations.assert_not_called()
+        mock_dmi_api.get_forecast.assert_not_called()

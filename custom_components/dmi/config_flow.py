@@ -42,9 +42,11 @@ from .const import (
     CONF_USE_COORDINATES,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
+    SEA_SENSOR_TYPES_BY_KEY,
     SENSOR_TYPES_BY_KEY,
     SETUP_TYPE_ADVANCED,
     SETUP_TYPE_NORMAL,
+    SETUP_TYPE_SEA,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -58,6 +60,7 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         """Initialize the config flow."""
         self._stations: list[dict[str, Any]] = []
+        self._sea_stations: list[dict[str, Any]] = []
         self._advanced_primary: dict[str, Any] | None = None
         self._advanced_backup_count = 1
         self._advanced_backups: list[dict[str, Any]] = []
@@ -68,7 +71,55 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle the initial step."""
         return self.async_show_menu(
             step_id="user",
-            menu_options=["station", "advanced_primary"],
+            menu_options=["station", "advanced_primary", "sea"],
+        )
+
+    async def async_step_sea(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Handle tide-gauge station selection."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            station = self._get_station_by_id(
+                str(user_input.get(CONF_STATION_ID, "")),
+                stations=self._sea_stations,
+            )
+            if station is None:
+                errors["base"] = "invalid_station"
+            else:
+                station_id = str(station.get("stationId") or "")
+                station_name = str(station.get("name") or "DMI Sea Level")
+                data = {
+                    CONF_SETUP_TYPE: SETUP_TYPE_SEA,
+                    CONF_STATION_ID: station_id,
+                    CONF_STATION_NAME: station_name,
+                    CONF_LATITUDE: station.get("latitude"),
+                    CONF_LONGITUDE: station.get("longitude"),
+                    CONF_USE_COORDINATES: False,
+                }
+                await self.async_set_unique_id(f"dmi_sea_{station_id}")
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(title=station_name, data=data)
+
+        if not await self._async_load_sea_stations():
+            return self.async_show_form(
+                step_id="sea",
+                data_schema=vol.Schema({}),
+                errors={"base": "cannot_connect"},
+            )
+
+        return self.async_show_form(
+            step_id="sea",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_STATION_ID): SelectSelector(
+                        SelectSelectorConfig(
+                            options=self._build_station_options(self._sea_stations),
+                            mode=SelectSelectorMode.LIST,
+                        )
+                    ),
+                }
+            ),
+            errors=errors,
         )
 
     async def async_step_station(
@@ -401,17 +452,25 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_USE_COORDINATES: use_coordinates,
         }
 
-    def _get_station_by_id(self, station_id: str) -> dict[str, Any] | None:
+    def _get_station_by_id(
+        self,
+        station_id: str,
+        *,
+        stations: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any] | None:
         """Return a station by id."""
-        for station in self._stations:
+        for station in self._stations if stations is None else stations:
             if str(station.get("stationId", "")) == station_id:
                 return station
         return None
 
-    def _build_station_options(self) -> list[dict[str, str]]:
+    def _build_station_options(
+        self,
+        stations: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, str]]:
         """Build selector options for stations."""
         station_options_by_id: dict[str, dict[str, str]] = {}
-        for station in self._stations:
+        for station in self._stations if stations is None else stations:
             station_id = station.get("stationId")
             if not station_id:
                 continue
@@ -517,6 +576,34 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return bool(self._stations)
 
+    async def _async_load_sea_stations(self) -> bool:
+        """Load supported tide-gauge stations from the DMI oceanObs API."""
+        if self._sea_stations:
+            return True
+
+        try:
+            session = async_get_clientsession(self.hass)
+            api_client = DMIApiClient(session)
+            stations = await api_client.get_sea_stations(active_only=True)
+            self._sea_stations = [
+                station
+                for station in stations
+                if station.get("validTo") is None
+                and any(
+                    parameter_id in SEA_SENSOR_TYPES_BY_KEY
+                    for parameter_id in station.get("parameterId", [])
+                )
+            ]
+            _LOGGER.debug("Fetched %d supported tide-gauge stations", len(self._sea_stations))
+        except CannotConnect as err:
+            _LOGGER.error("Cannot connect to DMI oceanObs API: %s", err)
+            return False
+        except Exception as err:  # pragma: no cover - defensive path
+            _LOGGER.exception("Unexpected error fetching tide-gauge stations: %s", err)
+            return False
+
+        return bool(self._sea_stations)
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
@@ -537,25 +624,26 @@ class DMIOptionsFlowHandler(OptionsFlow):
         )
         current_include_forecast = self.config_entry.options.get(CONF_INCLUDE_FORECAST, True)
 
-        data_schema = vol.Schema(
-            {
-                vol.Optional(
-                    CONF_UPDATE_INTERVAL,
-                    default=current_interval,
-                ): NumberSelector(
-                    NumberSelectorConfig(
-                        min=10,
-                        max=60,
-                        step=1,
-                        mode=NumberSelectorMode.SLIDER,
-                        unit_of_measurement="minutes",
-                    )
-                ),
+        schema: dict[vol.Marker, Any] = {
+            vol.Optional(
+                CONF_UPDATE_INTERVAL,
+                default=current_interval,
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=10,
+                    max=60,
+                    step=1,
+                    mode=NumberSelectorMode.SLIDER,
+                    unit_of_measurement="minutes",
+                )
+            )
+        }
+        if self.config_entry.data.get(CONF_SETUP_TYPE) != SETUP_TYPE_SEA:
+            schema[
                 vol.Optional(
                     CONF_INCLUDE_FORECAST,
                     default=current_include_forecast,
-                ): BooleanSelector(),
-            }
-        )
+                )
+            ] = BooleanSelector()
 
-        return self.async_show_form(step_id="init", data_schema=data_schema)
+        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema))

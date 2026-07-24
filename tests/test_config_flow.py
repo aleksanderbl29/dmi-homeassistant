@@ -93,7 +93,57 @@ class TestDMIConfigFlow:
         )
 
         assert result["type"] == FlowResultType.MENU
-        assert set(result["menu_options"]) == {"station", "advanced_primary"}
+        assert set(result["menu_options"]) == {"station", "advanced_primary", "sea"}
+
+    async def test_sea_flow_creates_tide_gauge_entry(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test the sea setup path creates a distinct tide-gauge entry."""
+        sea_stations = [
+            {
+                "stationId": "30017",
+                "name": "Korsør",
+                "latitude": 55.33,
+                "longitude": 11.14,
+                "type": "Tide-gauge-primary",
+                "parameterId": ["sea_reg", "sealev_dvr", "sealev_ln", "tw"],
+            },
+            {
+                "stationId": "unsupported",
+                "name": "Unsupported",
+                "parameterId": ["unknown"],
+            },
+            {
+                "stationId": "ended",
+                "name": "Ended Gauge",
+                "parameterId": ["sealev_dvr"],
+                "validTo": "2021-01-06T00:00:00Z",
+            },
+        ]
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
+            mock_api = MagicMock()
+            mock_api.get_sea_stations = AsyncMock(return_value=sea_stations)
+            mock_api_class.return_value = mock_api
+
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], _flow_menu_select(result, "sea")
+            )
+            options = _selector_options(result, CONF_STATION_ID)
+            assert [option["value"] for option in options] == ["30017"]
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "30017"},
+            )
+
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert result["title"] == "Korsør"
+        assert result["data"][CONF_SETUP_TYPE] == "sea"
+        assert result["data"][CONF_STATION_ID] == "30017"
+        assert result["data"][CONF_USE_COORDINATES] is False
 
     async def test_normal_flow_creates_entry(
         self,

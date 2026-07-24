@@ -35,6 +35,7 @@ from .const import (
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
     SETUP_TYPE_ADVANCED,
+    SETUP_TYPE_SEA,
     SOURCE_TYPE_BACKUP,
     SOURCE_TYPE_PRIMARY,
 )
@@ -89,7 +90,10 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         update_interval = timedelta(minutes=update_interval_minutes)
 
         # Check if forecast is enabled
-        self.include_forecast: bool = config_entry.options.get(CONF_INCLUDE_FORECAST, True)
+        self.include_forecast: bool = (
+            self.setup_type != SETUP_TYPE_SEA
+            and config_entry.options.get(CONF_INCLUDE_FORECAST, True)
+        )
 
         # Tracks a cooldown window after a 429, so a single rate-limit hit
         # doesn't turn into a retry storm via HA's own backoff mechanism.
@@ -152,8 +156,11 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self.latitude,
                     self.longitude,
                 )
-                # Fetch observations
-                primary_observations = await self.api.get_observations(self.station_id)
+                # Fetch observations from the configured DMI dataset.
+                if self.setup_type == SETUP_TYPE_SEA:
+                    primary_observations = await self.api.get_sea_observations(self.station_id)
+                else:
+                    primary_observations = await self.api.get_observations(self.station_id)
                 observations = self._annotate_observations(
                     primary_observations,
                     station_id=self.station_id,
@@ -169,7 +176,8 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # two requests in this cycle are never sent back-to-back.
                 forecast = None
                 if (
-                    self.include_forecast
+                    self.setup_type != SETUP_TYPE_SEA
+                    and self.include_forecast
                     and self.latitude is not None
                     and self.longitude is not None
                 ):

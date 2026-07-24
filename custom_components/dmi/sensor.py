@@ -23,9 +23,12 @@ from .const import (
     CONF_STATION_NAME,
     DOMAIN,
     LAST_FETCH_SENSOR,
+    SEA_SENSOR_TYPES,
+    SEA_SENSOR_TYPES_BY_KEY,
     SENSOR_TYPES,
     SENSOR_TYPES_BY_KEY,
     SETUP_TYPE_ADVANCED,
+    SETUP_TYPE_SEA,
     SOURCE_TYPE_BACKUP,
 )
 from .coordinator import DMIDataUpdateCoordinator
@@ -39,6 +42,10 @@ async def async_setup_entry(
     """Set up DMI Weather sensor entities from config entry."""
     coordinator: DMIDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
+    sensor_types = SEA_SENSOR_TYPES if coordinator.setup_type == SETUP_TYPE_SEA else SENSOR_TYPES
+    sensor_types_by_key = (
+        SEA_SENSOR_TYPES_BY_KEY if coordinator.setup_type == SETUP_TYPE_SEA else SENSOR_TYPES_BY_KEY
+    )
     observations = coordinator.data.get("observations", {}) if coordinator.data else {}
     coordinator.known_sensor_keys = set(observations.keys())
 
@@ -48,7 +55,7 @@ async def async_setup_entry(
             config_entry=config_entry,
         )
     ]
-    for description in SENSOR_TYPES:
+    for description in sensor_types:
         if description.key in coordinator.known_sensor_keys:
             entities.append(
                 DMISensor(
@@ -75,10 +82,10 @@ async def async_setup_entry(
             DMISensor(
                 coordinator=coordinator,
                 config_entry=config_entry,
-                entity_description=SENSOR_TYPES_BY_KEY[param_key],
+                entity_description=sensor_types_by_key[param_key],
             )
             for param_key in sorted(new_params)
-            if param_key in SENSOR_TYPES_BY_KEY
+            if param_key in sensor_types_by_key
         ]
         if new_entities:
             coordinator.known_sensor_keys.update(
@@ -116,7 +123,11 @@ class DMIBaseSensor(CoordinatorEntity[DMIDataUpdateCoordinator], SensorEntity):
             model=(
                 f"Composite Weather Station {self._station_id}"
                 if self._setup_type == SETUP_TYPE_ADVANCED
-                else f"Weather Station {self._station_id}"
+                else (
+                    f"Sea Level Station {self._station_id}"
+                    if self._setup_type == SETUP_TYPE_SEA
+                    else f"Weather Station {self._station_id}"
+                )
             ),
             configuration_url="https://www.dmi.dk",
         )
@@ -201,6 +212,12 @@ class DMISensor(DMIBaseSensor):
             observed = param_data.get("observed")
             if observed:
                 attributes["observation_time"] = observed
+            created = param_data.get("created")
+            if created:
+                attributes["created_time"] = created
+            qc_status = param_data.get("qc_status")
+            if qc_status:
+                attributes["quality_control_status"] = qc_status
             for source_key in (
                 CONF_SOURCE_STATION_ID,
                 CONF_SOURCE_STATION_NAME,
