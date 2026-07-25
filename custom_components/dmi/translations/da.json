@@ -133,6 +133,9 @@
       "sealev_ln": { "name": "Vandstand lokal reference" },
       "sea_reg": { "name": "Vandstandsregistrering" },
       "tw": { "name": "Vandtemperatur" },
+      "predicted_sea_level": { "name": "Forudsagt vandstand" },
+      "next_high_tide": { "name": "Næste højvande" },
+      "next_low_tide": { "name": "Næste lavvande" },
       "last_fetch": { "name": "Seneste vellykkede opdatering" }
     }
   }

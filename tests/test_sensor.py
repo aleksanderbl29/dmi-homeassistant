@@ -17,15 +17,20 @@ from custom_components.dmi.const import (
     CONF_BACKUP_PARAMETERS,
     CONF_BACKUP_STATION_NAME_SUFFIX,
     CONF_BACKUP_STATIONS,
+    CONF_LOW_ASTRONOMICAL_TIDE,
+    CONF_MEAN_LOW_WATER_SPRING,
     CONF_STATION_ID,
     CONF_STATION_NAME,
+    CONF_TIDEWATER_STATION_ID,
+    CONF_TIDEWATER_STATION_NAME,
     DOMAIN,
     LAST_FETCH_SENSOR,
     SEA_SENSOR_TYPES,
     SENSOR_TYPES,
+    TIDEWATER_SENSOR_TYPES,
 )
 from custom_components.dmi.coordinator import DMIDataUpdateCoordinator
-from custom_components.dmi.sensor import DMILastFetchSensor, DMISensor
+from custom_components.dmi.sensor import DMILastFetchSensor, DMISensor, DMITidewaterSensor
 
 
 class TestDMISensor:
@@ -207,6 +212,73 @@ class TestDMILastFetchSensor:
         assert sensor.entity_description.entity_category == EntityCategory.DIAGNOSTIC
 
 
+class TestDMITidewaterSensor:
+    """Test astronomical tide prediction sensor behavior."""
+
+    def test_predicted_level_exposes_series_and_extremes(self) -> None:
+        """Test the main prediction sensor includes the rolling forecast."""
+        coordinator = MagicMock(spec=DMIDataUpdateCoordinator)
+        coordinator.data = {
+            "tidewater_forecast": [
+                {
+                    "value": 12.1,
+                    "prediction_time": "2026-07-25T09:40:00Z",
+                    "prediction_type": "10minutes",
+                    "created": "2026-03-23T10:18:26Z",
+                    "station_id": "29393",
+                },
+                {
+                    "value": 16.2,
+                    "prediction_time": "2026-07-25T09:47:00Z",
+                    "prediction_type": "maximum",
+                    "created": "2026-03-23T09:30:10Z",
+                    "station_id": "29393",
+                },
+                {
+                    "value": -14.1,
+                    "prediction_time": "2026-07-25T16:07:00Z",
+                    "prediction_type": "minimum",
+                    "created": "2026-03-23T09:30:10Z",
+                    "station_id": "29393",
+                },
+            ],
+            "last_updated": datetime(2026, 7, 25, 9, 35, tzinfo=UTC),
+        }
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Korsør",
+            data={
+                "setup_type": "sea",
+                CONF_STATION_ID: "30017",
+                CONF_STATION_NAME: "Korsør",
+                CONF_TIDEWATER_STATION_ID: "29393",
+                CONF_TIDEWATER_STATION_NAME: "Korsør",
+                CONF_LOW_ASTRONOMICAL_TIDE: -23.8,
+                CONF_MEAN_LOW_WATER_SPRING: -15.0,
+            },
+        )
+        description = next(
+            item for item in TIDEWATER_SENSOR_TYPES if item.key == "predicted_sea_level"
+        )
+
+        sensor = DMITidewaterSensor(coordinator, entry, description)
+
+        assert sensor.native_value == 12.1
+        assert sensor.extra_state_attributes["prediction_time"] == ("2026-07-25T09:40:00Z")
+        assert sensor.extra_state_attributes["forecast"] == [
+            {"datetime": "2026-07-25T09:40:00Z", "value": 12.1}
+        ]
+        assert sensor.extra_state_attributes["next_high_tide"] == {
+            "datetime": "2026-07-25T09:47:00Z",
+            "value": 16.2,
+        }
+        assert sensor.extra_state_attributes["next_low_tide"] == {
+            "datetime": "2026-07-25T16:07:00Z",
+            "value": -14.1,
+        }
+        assert sensor.extra_state_attributes[CONF_LOW_ASTRONOMICAL_TIDE] == -23.8
+
+
 class TestSensorTypes:
     """Test cases for SENSOR_TYPES definitions."""
 
@@ -249,6 +321,11 @@ class TestSensorTypes:
         assert sea_level.device_class == SensorDeviceClass.DISTANCE
         assert water_temperature.native_unit_of_measurement == "°C"
         assert water_temperature.device_class == SensorDeviceClass.TEMPERATURE
+        assert {sensor.key for sensor in TIDEWATER_SENSOR_TYPES} == {
+            "predicted_sea_level",
+            "next_high_tide",
+            "next_low_tide",
+        }
 
 
 class TestDMISensorIntegration:
@@ -343,6 +420,10 @@ class TestDMISensorIntegration:
                 "setup_type": "sea",
                 CONF_STATION_ID: "30017",
                 CONF_STATION_NAME: "Korsør",
+                CONF_TIDEWATER_STATION_ID: "29393",
+                CONF_TIDEWATER_STATION_NAME: "Korsør",
+                CONF_LOW_ASTRONOMICAL_TIDE: -23.8,
+                CONF_MEAN_LOW_WATER_SPRING: -15.0,
                 "latitude": 55.33,
                 "longitude": 11.14,
                 "use_coordinates": False,
@@ -365,6 +446,31 @@ class TestDMISensorIntegration:
                 },
             }
         )
+        mock_dmi_api.get_tidewater_forecast = AsyncMock(
+            return_value=[
+                {
+                    "value": 12.1,
+                    "prediction_time": "2026-07-25T09:40:00Z",
+                    "prediction_type": "10minutes",
+                    "created": "2026-03-23T10:18:26Z",
+                    "station_id": "29393",
+                },
+                {
+                    "value": 16.2,
+                    "prediction_time": "2026-07-25T09:47:00Z",
+                    "prediction_type": "maximum",
+                    "created": "2026-03-23T09:30:10Z",
+                    "station_id": "29393",
+                },
+                {
+                    "value": -14.1,
+                    "prediction_time": "2026-07-25T16:07:00Z",
+                    "prediction_type": "minimum",
+                    "created": "2026-03-23T09:30:10Z",
+                    "station_id": "29393",
+                },
+            ]
+        )
         entry.add_to_hass(hass)
 
         await hass.config_entries.async_setup(entry.entry_id)
@@ -372,11 +478,22 @@ class TestDMISensorIntegration:
 
         sea_level = hass.states.get("sensor.korsor_sea_level_dvr90")
         water_temperature = hass.states.get("sensor.korsor_water_temperature")
+        predicted_level = hass.states.get("sensor.korsor_predicted_sea_level")
+        next_high = hass.states.get("sensor.korsor_next_high_tide")
+        next_low = hass.states.get("sensor.korsor_next_low_tide")
         assert sea_level is not None
         assert sea_level.state == "26.0"
         assert sea_level.attributes["quality_control_status"] == "auto"
         assert sea_level.attributes["created_time"] == "2026-07-24T15:41:44Z"
         assert water_temperature is not None
+        assert predicted_level is not None
+        assert predicted_level.state == "12.1"
+        assert predicted_level.attributes["next_high_tide"]["value"] == 16.2
+        assert next_high is not None
+        assert next_high.state == "16.2"
+        assert next_high.attributes["prediction_time"] == "2026-07-25T09:47:00Z"
+        assert next_low is not None
+        assert next_low.state == "-14.1"
         assert hass.states.get("weather.korsor") is None
         mock_dmi_api.get_observations.assert_not_called()
         mock_dmi_api.get_forecast.assert_not_called()

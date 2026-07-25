@@ -15,12 +15,16 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import (
     CONF_BACKUP_STATION_NAME_SUFFIX,
     CONF_BACKUP_STATIONS,
+    CONF_LOW_ASTRONOMICAL_TIDE,
+    CONF_MEAN_LOW_WATER_SPRING,
     CONF_SETUP_TYPE,
     CONF_SOURCE_STATION_ID,
     CONF_SOURCE_STATION_NAME,
     CONF_SOURCE_TYPE,
     CONF_STATION_ID,
     CONF_STATION_NAME,
+    CONF_TIDEWATER_STATION_ID,
+    CONF_TIDEWATER_STATION_NAME,
     DOMAIN,
     LAST_FETCH_SENSOR,
     SEA_SENSOR_TYPES,
@@ -30,6 +34,7 @@ from .const import (
     SETUP_TYPE_ADVANCED,
     SETUP_TYPE_SEA,
     SOURCE_TYPE_BACKUP,
+    TIDEWATER_SENSOR_TYPES,
 )
 from .coordinator import DMIDataUpdateCoordinator
 
@@ -49,7 +54,7 @@ async def async_setup_entry(
     observations = coordinator.data.get("observations", {}) if coordinator.data else {}
     coordinator.known_sensor_keys = set(observations.keys())
 
-    entities: list[DMISensor | DMILastFetchSensor] = [
+    entities: list[DMISensor | DMITidewaterSensor | DMILastFetchSensor] = [
         DMILastFetchSensor(
             coordinator=coordinator,
             config_entry=config_entry,
@@ -64,6 +69,16 @@ async def async_setup_entry(
                     entity_description=description,
                 )
             )
+
+    if coordinator.setup_type == SETUP_TYPE_SEA and coordinator.tidewater_station_id:
+        entities.extend(
+            DMITidewaterSensor(
+                coordinator=coordinator,
+                config_entry=config_entry,
+                entity_description=description,
+            )
+            for description in TIDEWATER_SENSOR_TYPES
+        )
 
     async_add_entities(entities, True)
 
@@ -233,6 +248,105 @@ class DMISensor(DMIBaseSensor):
             attributes["last_updated"] = last_updated.isoformat()
 
         return attributes
+
+
+class DMITidewaterSensor(DMIBaseSensor):
+    """Representation of an astronomical tide prediction sensor."""
+
+    _PREDICTION_TYPES = {
+        "predicted_sea_level": "10minutes",
+        "next_high_tide": "maximum",
+        "next_low_tide": "minimum",
+    }
+
+    def __init__(
+        self,
+        coordinator: DMIDataUpdateCoordinator,
+        config_entry: ConfigEntry,
+        entity_description: SensorEntityDescription,
+    ) -> None:
+        """Initialize a tide prediction sensor."""
+        super().__init__(coordinator, config_entry)
+        self.entity_description = entity_description
+        self._attr_unique_id = f"{config_entry.entry_id}_{entity_description.key}"
+
+    @property
+    def _predictions(self) -> list[dict[str, Any]]:
+        """Return the current prediction series."""
+        if self.coordinator.data is None:
+            return []
+        return self.coordinator.data.get("tidewater_forecast") or []
+
+    def _first_prediction(self, prediction_type: str) -> dict[str, Any] | None:
+        """Return the first prediction of a given DMI type."""
+        return next(
+            (
+                prediction
+                for prediction in self._predictions
+                if prediction.get("prediction_type") == prediction_type
+            ),
+            None,
+        )
+
+    @property
+    def _current_prediction(self) -> dict[str, Any] | None:
+        """Return the prediction represented by this entity."""
+        prediction_type = self._PREDICTION_TYPES[self.entity_description.key]
+        return self._first_prediction(prediction_type)
+
+    @property
+    def native_value(self) -> Any:
+        """Return the predicted sea level."""
+        prediction = self._current_prediction
+        return prediction.get("value") if prediction else None
+
+    @staticmethod
+    def _summary(prediction: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Return a compact value/timestamp prediction summary."""
+        if prediction is None:
+            return None
+        return {
+            "datetime": prediction.get("prediction_time"),
+            "value": prediction.get("value"),
+        }
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return forecast series, timing, and prediction-station metadata."""
+        prediction = self._current_prediction
+        attributes: dict[str, Any] = {
+            CONF_TIDEWATER_STATION_ID: self._config_entry.data.get(CONF_TIDEWATER_STATION_ID),
+            CONF_TIDEWATER_STATION_NAME: self._config_entry.data.get(CONF_TIDEWATER_STATION_NAME),
+        }
+        if prediction:
+            attributes["prediction_time"] = prediction.get("prediction_time")
+            attributes["prediction_created_time"] = prediction.get("created")
+
+        low_astronomical_tide = self._config_entry.data.get(CONF_LOW_ASTRONOMICAL_TIDE)
+        if low_astronomical_tide is not None:
+            attributes[CONF_LOW_ASTRONOMICAL_TIDE] = low_astronomical_tide
+        mean_low_water_spring = self._config_entry.data.get(CONF_MEAN_LOW_WATER_SPRING)
+        if mean_low_water_spring is not None:
+            attributes[CONF_MEAN_LOW_WATER_SPRING] = mean_low_water_spring
+
+        if self.entity_description.key == "predicted_sea_level":
+            attributes["forecast"] = [
+                {
+                    "datetime": item.get("prediction_time"),
+                    "value": item.get("value"),
+                }
+                for item in self._predictions
+                if item.get("prediction_type") == "10minutes"
+            ]
+            attributes["next_high_tide"] = self._summary(self._first_prediction("maximum"))
+            attributes["next_low_tide"] = self._summary(self._first_prediction("minimum"))
+
+        if self.coordinator.data is not None:
+            last_updated = self.coordinator.data.get("last_updated")
+            if isinstance(last_updated, datetime):
+                attributes["last_updated"] = last_updated.isoformat()
+
+        return {key: value for key, value in attributes.items() if value is not None}
 
 
 class DMILastFetchSensor(DMIBaseSensor):

@@ -365,6 +365,30 @@ SEA_SENSOR_TYPES_BY_KEY: dict[str, SensorEntityDescription] = {
     description.key: description for description in SEA_SENSOR_TYPES
 }
 
+TIDEWATER_SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
+    _sensor(
+        "predicted_sea_level",
+        "Predicted Sea Level",
+        native_unit_of_measurement="cm",
+        device_class=SensorDeviceClass.DISTANCE,
+        icon="mdi:waves-arrow-right",
+    ),
+    _sensor(
+        "next_high_tide",
+        "Next High Tide",
+        native_unit_of_measurement="cm",
+        device_class=SensorDeviceClass.DISTANCE,
+        icon="mdi:waves-arrow-up",
+    ),
+    _sensor(
+        "next_low_tide",
+        "Next Low Tide",
+        native_unit_of_measurement="cm",
+        device_class=SensorDeviceClass.DISTANCE,
+        icon="mdi:waves-arrow-down",
+    ),
+)
+
 LAST_FETCH_SENSOR = SensorEntityDescription(
     key="last_fetch",
     name="Last Successful Update",

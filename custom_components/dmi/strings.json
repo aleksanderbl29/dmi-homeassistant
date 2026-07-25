@@ -133,6 +133,9 @@
       "sealev_ln": { "name": "Sea Level Local Reference" },
       "sea_reg": { "name": "Sea Level Registration" },
       "tw": { "name": "Water Temperature" },
+      "predicted_sea_level": { "name": "Predicted Sea Level" },
+      "next_high_tide": { "name": "Next High Tide" },
+      "next_low_tide": { "name": "Next Low Tide" },
       "last_fetch": { "name": "Last Successful Update" }
     }
   }
