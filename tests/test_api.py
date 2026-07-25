@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -112,6 +113,46 @@ class TestDMIApiClient:
         stations = await api_client.get_sea_stations()
 
         assert stations[0]["validTo"] == "2021-01-06T00:00:00Z"
+
+    async def test_get_tidewater_stations_parses_prediction_metadata(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test astronomical prediction stations retain reference metadata."""
+        api_client._request = AsyncMock(
+            return_value={
+                "features": [
+                    {
+                        "geometry": {"coordinates": [11.1422, 55.3306]},
+                        "properties": {
+                            "stationId": "29393",
+                            "name": "Korsør",
+                            "country": "DNK",
+                            "lowAstronomicalTide": -23.8,
+                            "meanLowWaterSpring": -15.0,
+                        },
+                    }
+                ]
+            }
+        )
+
+        stations = await api_client.get_tidewater_stations()
+
+        assert stations == [
+            {
+                "stationId": "29393",
+                "name": "Korsør",
+                "country": "DNK",
+                "longitude": 11.1422,
+                "latitude": 55.3306,
+                "lowAstronomicalTide": -23.8,
+                "meanLowWaterSpring": -15.0,
+            }
+        ]
+        api_client._request.assert_awaited_once_with(
+            f"{OCEANOBS_URL}/collections/tidewaterstation/items",
+            {"limit": 1000, "offset": 0},
+        )
 
     async def test_get_stations_filters_invalid(
         self,
@@ -381,6 +422,61 @@ class TestDMIApiClient:
                 "limit": 100,
                 "offset": 0,
                 "sortorder": "observed,DESC",
+            },
+        )
+
+    async def test_get_tidewater_forecast_returns_sorted_prediction_types(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test tide predictions are normalized and sorted by prediction time."""
+        api_client._request = AsyncMock(
+            return_value={
+                "features": [
+                    {
+                        "properties": {
+                            "predictionType": "maximum",
+                            "predictionTime": "2026-07-25T09:47:00Z",
+                            "created": "2026-03-23T09:30:10Z",
+                            "value": 16.2,
+                            "stationId": "29393",
+                        }
+                    },
+                    {
+                        "properties": {
+                            "predictionType": "10minutes",
+                            "predictionTime": "2026-07-25T09:40:00Z",
+                            "created": "2026-03-23T10:18:26Z",
+                            "value": 16.1,
+                            "stationId": "29393",
+                        }
+                    },
+                ]
+            }
+        )
+        start = datetime(2026, 7, 25, 9, 30, tzinfo=UTC)
+        end = datetime(2026, 7, 26, 9, 30, tzinfo=UTC)
+
+        predictions = await api_client.get_tidewater_forecast("29393", start, end)
+
+        assert [prediction["prediction_type"] for prediction in predictions] == [
+            "10minutes",
+            "maximum",
+        ]
+        assert predictions[0] == {
+            "value": 16.1,
+            "prediction_time": "2026-07-25T09:40:00Z",
+            "prediction_type": "10minutes",
+            "created": "2026-03-23T10:18:26Z",
+            "station_id": "29393",
+        }
+        api_client._request.assert_awaited_once_with(
+            f"{OCEANOBS_URL}/collections/tidewater/items",
+            {
+                "stationId": "29393",
+                "datetime": "2026-07-25T09:30:00Z/2026-07-26T09:30:00Z",
+                "limit": 500,
+                "offset": 0,
             },
         )
 

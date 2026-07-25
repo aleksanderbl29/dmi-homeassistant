@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any
 
 import aiohttp
@@ -257,6 +258,40 @@ class DMIApiClient:
         # https://www.dmi.dk/friedata/dokumentation/apis/oceanographic-observation-and-tidewater-api
         return await self._get_stations(OCEANOBS_URL, active_only=active_only)
 
+    async def get_tidewater_stations(self) -> list[dict[str, Any]]:
+        """Fetch DMI's separate catalog of astronomical prediction stations."""
+        url = f"{OCEANOBS_URL}/collections/tidewaterstation/items"
+        offset = 0
+        stations: list[dict[str, Any]] = []
+
+        while True:
+            data = await self._request(url, {"limit": PAGE_SIZE, "offset": offset})
+            features = data.get("features", [])
+            for feature in features:
+                props = feature.get("properties", {})
+                geometry = feature.get("geometry", {})
+                coordinates = geometry.get("coordinates", [None, None])
+                station_id = props.get("stationId")
+                if not station_id:
+                    continue
+                stations.append(
+                    {
+                        "stationId": str(station_id),
+                        "name": props.get("name"),
+                        "country": props.get("country"),
+                        "longitude": coordinates[0] if len(coordinates) > 0 else None,
+                        "latitude": coordinates[1] if len(coordinates) > 1 else None,
+                        "lowAstronomicalTide": props.get("lowAstronomicalTide"),
+                        "meanLowWaterSpring": props.get("meanLowWaterSpring"),
+                    }
+                )
+
+            if len(features) < PAGE_SIZE:
+                break
+            offset += PAGE_SIZE
+
+        return stations
+
     @staticmethod
     def _parse_observations(data: dict[str, Any]) -> dict[str, Any]:
         """Return the newest reading for every parameter in a response."""
@@ -321,6 +356,50 @@ class DMIApiClient:
 
         data = await self._request(url, params)
         return self._parse_observations(data)
+
+    @staticmethod
+    def _rfc3339(value: datetime) -> str:
+        """Format a datetime for DMI's inclusive datetime-range filter."""
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+    async def get_tidewater_forecast(
+        self,
+        station_id: str,
+        start: datetime,
+        end: datetime,
+    ) -> list[dict[str, Any]]:
+        """Fetch astronomical tide predictions for a prediction station."""
+        url = f"{OCEANOBS_URL}/collections/tidewater/items"
+        params = {
+            "stationId": station_id,
+            "datetime": f"{self._rfc3339(start)}/{self._rfc3339(end)}",
+            # A 24-hour response contains about 144 ten-minute predictions
+            # plus minima and maxima, so this remains a bounded request.
+            "limit": 500,
+            "offset": 0,
+        }
+        data = await self._request(url, params)
+
+        predictions: list[dict[str, Any]] = []
+        for feature in data.get("features", []):
+            props = feature.get("properties", {})
+            prediction_time = props.get("predictionTime")
+            prediction_type = props.get("predictionType")
+            if prediction_time is None or prediction_type is None:
+                continue
+            predictions.append(
+                {
+                    "value": props.get("value"),
+                    "prediction_time": prediction_time,
+                    "prediction_type": prediction_type,
+                    "created": props.get("created"),
+                    "station_id": str(props.get("stationId") or station_id),
+                }
+            )
+
+        return sorted(predictions, key=lambda prediction: prediction["prediction_time"])
 
     async def get_forecast(self, latitude: float, longitude: float) -> dict[str, Any]:
         """Fetch forecast data for coordinates.
