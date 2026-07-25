@@ -111,6 +111,7 @@ selected tide gauge reports, the integration creates:
 | Predicted Sea Level | cm | Next 10-minute astronomical tide prediction with a 24-hour series |
 | Next High Tide | cm | Next predicted astronomical high tide and its timestamp |
 | Next Low Tide | cm | Next predicted astronomical low tide and its timestamp |
+| DKSS Forecast Sea Level | cm | Weather-driven sea-level deviation forecast for up to five days |
 | Last Successful Update | timestamp | Time of the last successful data fetch from DMI |
 
 Sea-level readings also expose their observation timestamp, API creation timestamp when
@@ -122,6 +123,12 @@ nearest prediction point is selected by default and can be changed before the en
 The predicted-level sensor includes the next 24 hours of 10-minute values in its `forecast`
 attribute, as well as summaries of the next high and low tide. These are astronomical tide
 predictions; they do not include weather-driven storm-surge effects from DMI's DKSS model.
+
+The separate DKSS sensor uses the observation station coordinates to select the most detailed
+available DMI storm-surge model and the closest modelled water grid cell. It exposes the hourly
+forecast, forecast high and low, model collection, and model coordinates as attributes. DKSS
+values are deviations from mean sea level and therefore must not be treated as directly
+equivalent to observed DVR90 or local-reference levels.
 
 ## Data Sources And API Keys
 
@@ -137,6 +144,7 @@ This integration uses DMI's Open Data API at `opendataapi.dmi.dk`. The API is op
 
 - **Observations**: Real-time data from DMI weather stations
 - **Sea-level observations**: Tide-gauge data from DMI and the Danish Coastal Authority
+- **Storm-surge forecasts**: Coordinate-based sea-level deviations from DMI's DKSS model
 - **Forecasts**: HARMONIE-DINI model forecasts
 
 | Data | Endpoint | API key | Used by default |
