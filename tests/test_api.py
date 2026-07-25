@@ -480,6 +480,118 @@ class TestDMIApiClient:
             },
         )
 
+    @pytest.mark.parametrize(
+        ("latitude", "longitude", "expected"),
+        [
+            (55.8, 11.9, "dkss_if"),
+            (55.4, 9.8, "dkss_lb"),
+            (56.8, 9.5, "dkss_lf"),
+            (55.0, 8.5, "dkss_ws"),
+            (55.33, 11.14, "dkss_idw"),
+            (58.0, 10.0, "dkss_nsbs"),
+        ],
+    )
+    def test_dkss_collection_selects_most_detailed_model(
+        self,
+        latitude: float,
+        longitude: float,
+        expected: str,
+    ) -> None:
+        """Test DKSS collection selection prefers nested high-resolution areas."""
+        assert DMIApiClient._dkss_collection_for_position(latitude, longitude) == expected
+
+    async def test_get_dkss_forecast_selects_nearest_wet_grid_cell(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test a nearby water cell is used when the gauge's closest cell is land."""
+        api_client._request = AsyncMock(
+            return_value={
+                "domain": {
+                    "axes": {
+                        "t": {
+                            "values": [
+                                "2026-07-25T10:00:00Z",
+                                "2026-07-25T11:00:00Z",
+                            ]
+                        },
+                        "x": {"start": 11.1, "stop": 11.2, "num": 2},
+                        "y": {"values": [55.3, 55.4]},
+                    }
+                },
+                "ranges": {
+                    "sea-mean-deviation": {
+                        "values": [
+                            None,
+                            0.12,
+                            0.2,
+                            0.3,
+                            None,
+                            0.13,
+                            0.21,
+                            0.31,
+                        ]
+                    }
+                },
+            }
+        )
+        start = datetime(2026, 7, 25, 10, tzinfo=UTC)
+        end = datetime(2026, 7, 30, 10, tzinfo=UTC)
+
+        forecast = await api_client.get_dkss_forecast(55.31, 11.11, start, end)
+
+        assert forecast == {
+            "collection_id": "dkss_idw",
+            "model_latitude": 55.3,
+            "model_longitude": 11.2,
+            "forecast": [
+                {"datetime": "2026-07-25T10:00:00Z", "value": 12.0},
+                {"datetime": "2026-07-25T11:00:00Z", "value": 13.0},
+            ],
+        }
+        request_url, request_params = api_client._request.await_args.args
+        assert request_url == f"{FORECAST_URL}/collections/dkss_idw/cube"
+        assert request_params["parameter-name"] == "sea-mean-deviation"
+        assert request_params["datetime"] == ("2026-07-25T10:00:00Z/2026-07-30T10:00:00Z")
+
+    async def test_get_dkss_forecast_falls_back_to_broad_model(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test an all-land regional result falls back to dkss_nsbs."""
+        empty_coverage = {
+            "domain": {
+                "axes": {
+                    "t": {"values": ["2026-07-25T10:00:00Z"]},
+                    "x": {"values": [11.1]},
+                    "y": {"values": [55.3]},
+                }
+            },
+            "ranges": {"sea-mean-deviation": {"values": [None]}},
+        }
+        wet_coverage = {
+            "domain": {
+                "axes": {
+                    "t": {"values": ["2026-07-25T10:00:00Z"]},
+                    "x": {"values": [11.1]},
+                    "y": {"values": [55.3]},
+                }
+            },
+            "ranges": {"sea-mean-deviation": {"values": [0.1]}},
+        }
+        api_client._request = AsyncMock(side_effect=[empty_coverage, wet_coverage])
+        start = datetime(2026, 7, 25, 10, tzinfo=UTC)
+        end = datetime(2026, 7, 30, 10, tzinfo=UTC)
+
+        forecast = await api_client.get_dkss_forecast(55.31, 11.11, start, end)
+
+        assert forecast is not None
+        assert forecast["collection_id"] == "dkss_nsbs"
+        assert [call.args[0] for call in api_client._request.await_args_list] == [
+            f"{FORECAST_URL}/collections/dkss_idw/cube",
+            f"{FORECAST_URL}/collections/dkss_nsbs/cube",
+        ]
+
     async def test_get_observations_success(
         self,
         api_client: DMIApiClient,

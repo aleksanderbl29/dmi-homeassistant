@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
@@ -16,6 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 AUTH_PARAM_NAMES = frozenset({"api-key", "apikey", "token"})
 PAGE_SIZE = 1000
 OBSERVATION_PAGE_SIZE = 100
+DKSS_SEARCH_RADIUS = 0.05
 
 
 class CannotConnect(Exception):
@@ -400,6 +402,134 @@ class DMIApiClient:
             )
 
         return sorted(predictions, key=lambda prediction: prediction["prediction_time"])
+
+    @staticmethod
+    def _dkss_collection_for_position(latitude: float, longitude: float) -> str:
+        """Choose DMI's most detailed DKSS model covering a position."""
+        model_areas = (
+            ("dkss_if", 11.6, 12.1, 55.6, 56.0),
+            ("dkss_lb", 9.5, 10.1, 55.2, 55.7),
+            ("dkss_lf", 8.2, 10.3, 56.5, 57.1),
+            ("dkss_ws", 6.2, 10.5, 53.2, 55.7),
+            ("dkss_idw", 9.3, 14.8, 53.6, 57.6),
+            ("dkss_nsbs", 4.1, 30.3, 48.0, 65.9),
+        )
+        for collection_id, west, east, south, north in model_areas:
+            if west <= longitude <= east and south <= latitude <= north:
+                return collection_id
+        return "dkss_nsbs"
+
+    @staticmethod
+    def _axis_values(axis: dict[str, Any]) -> list[float]:
+        """Expand a CoverageJSON numeric axis into explicit values."""
+        if isinstance(axis.get("values"), list):
+            return [float(value) for value in axis["values"]]
+        count = int(axis.get("num") or 0)
+        if count <= 0:
+            return []
+        start = float(axis["start"])
+        if count == 1:
+            return [start]
+        stop = float(axis["stop"])
+        step = (stop - start) / (count - 1)
+        return [start + step * index for index in range(count)]
+
+    @classmethod
+    def _parse_dkss_coverage(
+        cls,
+        data: dict[str, Any],
+        *,
+        latitude: float,
+        longitude: float,
+        collection_id: str,
+    ) -> dict[str, Any] | None:
+        """Extract the closest wet grid cell from a DKSS coverage."""
+        axes = data.get("domain", {}).get("axes", {})
+        time_values = axes.get("t", {}).get("values", [])
+        x_values = cls._axis_values(axes.get("x", {}))
+        y_values = cls._axis_values(axes.get("y", {}))
+        values = data.get("ranges", {}).get("sea-mean-deviation", {}).get("values", [])
+        if not time_values or not x_values or not y_values or not values:
+            return None
+
+        cell_count = len(x_values) * len(y_values)
+        wet_cells: list[tuple[float, int, int]] = []
+        longitude_scale = math.cos(math.radians(latitude))
+        for y_index, model_latitude in enumerate(y_values):
+            for x_index, model_longitude in enumerate(x_values):
+                cell_index = y_index * len(x_values) + x_index
+                if not any(
+                    time_index * cell_count + cell_index < len(values)
+                    and values[time_index * cell_count + cell_index] is not None
+                    for time_index in range(len(time_values))
+                ):
+                    continue
+                distance_squared = (model_latitude - latitude) ** 2 + (
+                    (model_longitude - longitude) * longitude_scale
+                ) ** 2
+                wet_cells.append((distance_squared, y_index, x_index))
+
+        if not wet_cells:
+            return None
+
+        _, y_index, x_index = min(wet_cells)
+        cell_index = y_index * len(x_values) + x_index
+        forecast: list[dict[str, Any]] = []
+        for time_index, forecast_time in enumerate(time_values):
+            value_index = time_index * cell_count + cell_index
+            if value_index >= len(values) or values[value_index] is None:
+                continue
+            forecast.append(
+                {
+                    "datetime": forecast_time,
+                    # DKSS sea-mean-deviation is metres; sea sensors use centimetres.
+                    "value": float(values[value_index]) * 100,
+                }
+            )
+
+        if not forecast:
+            return None
+        return {
+            "collection_id": collection_id,
+            "model_latitude": y_values[y_index],
+            "model_longitude": x_values[x_index],
+            "forecast": forecast,
+        }
+
+    async def get_dkss_forecast(
+        self,
+        latitude: float,
+        longitude: float,
+        start: datetime,
+        end: datetime,
+    ) -> dict[str, Any] | None:
+        """Fetch the DKSS sea-level forecast nearest a tide gauge."""
+        preferred_collection = self._dkss_collection_for_position(latitude, longitude)
+        collection_ids = [preferred_collection]
+        if preferred_collection != "dkss_nsbs":
+            collection_ids.append("dkss_nsbs")
+        radius = DKSS_SEARCH_RADIUS
+        params = {
+            "bbox": (
+                f"{longitude - radius},{latitude - radius},{longitude + radius},{latitude + radius}"
+            ),
+            "crs": "crs84",
+            "parameter-name": "sea-mean-deviation",
+            "datetime": f"{self._rfc3339(start)}/{self._rfc3339(end)}",
+            "f": "CoverageJSON",
+        }
+        for collection_id in collection_ids:
+            url = f"{FORECAST_URL}/collections/{collection_id}/cube"
+            data = await self._request(url, params)
+            parsed = self._parse_dkss_coverage(
+                data,
+                latitude=latitude,
+                longitude=longitude,
+                collection_id=collection_id,
+            )
+            if parsed is not None:
+                return parsed
+        return None
 
     async def get_forecast(self, latitude: float, longitude: float) -> dict[str, Any]:
         """Fetch forecast data for coordinates.
