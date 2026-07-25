@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import Platform
@@ -10,7 +10,14 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dmi import PLATFORMS
-from custom_components.dmi.const import DOMAIN
+from custom_components.dmi.api import RateLimitExceeded
+from custom_components.dmi.const import (
+    CONF_SETUP_TYPE,
+    CONF_STATION_ID,
+    CONF_STATION_NAME,
+    DOMAIN,
+    SETUP_TYPE_SEA,
+)
 
 
 class TestIntegrationSetup:
@@ -88,6 +95,33 @@ class TestIntegrationSetup:
         # Verify API was called
         mock_dmi_api.get_observations.assert_called()
         mock_dmi_api.get_forecast.assert_called()
+
+    async def test_sea_setup_entry_loads_during_rate_limit(
+        self,
+        hass: HomeAssistant,
+        mock_dmi_api: MagicMock,
+    ) -> None:
+        """Test a sea entry loads even when its initial request is throttled."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Korsør",
+            data={
+                CONF_SETUP_TYPE: SETUP_TYPE_SEA,
+                CONF_STATION_ID: "30017",
+                CONF_STATION_NAME: "Korsør",
+            },
+            unique_id="dmi_sea_30017",
+        )
+        entry.add_to_hass(hass)
+        mock_dmi_api.get_sea_observations = AsyncMock(side_effect=RateLimitExceeded("Rate limit"))
+
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert entry.state is ConfigEntryState.LOADED
+        coordinator = hass.data[DOMAIN][entry.entry_id]
+        assert coordinator.data["observations"] == {}
+        assert coordinator.data["last_updated"] is None
 
 
 class TestIntegrationUnload:

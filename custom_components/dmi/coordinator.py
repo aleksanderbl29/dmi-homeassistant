@@ -52,6 +52,8 @@ RATE_LIMIT_COOLDOWN = timedelta(minutes=1)
 REQUEST_STAGGER_SECONDS = 2
 TIDEWATER_FORECAST_HOURS = 24
 DKSS_FORECAST_HOURS = 120
+TIDEWATER_FORECAST_REFRESH_INTERVAL = timedelta(hours=6)
+DKSS_FORECAST_REFRESH_INTERVAL = timedelta(hours=3)
 
 
 class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -103,6 +105,14 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # doesn't turn into a retry storm via HA's own backoff mechanism.
         self._rate_limited_until: datetime | None = None
 
+        # Forecast products change much less frequently than observations.
+        # Cache them independently so ten-minute sea observations do not
+        # repeatedly request the same forecast data.
+        self._tidewater_forecast: list[dict[str, Any]] | None = None
+        self._tidewater_forecast_attempted_at: datetime | None = None
+        self._dkss_forecast: dict[str, Any] | None = None
+        self._dkss_forecast_attempted_at: datetime | None = None
+
         # Sensor platform tracks which observation keys already have entities.
         self.known_sensor_keys: set[str] = set()
 
@@ -126,6 +136,69 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         _LOGGER.warning(log_message, self.station_id, error)
         return self.data
+
+    @staticmethod
+    def _empty_sea_data() -> dict[str, Any]:
+        """Return an unavailable sea payload that allows setup to complete."""
+        return {
+            "observations": {},
+            "forecast": None,
+            "tidewater_forecast": None,
+            "dkss_forecast": None,
+            "last_updated": None,
+        }
+
+    @staticmethod
+    def _forecast_refresh_due(
+        attempted_at: datetime | None,
+        now: datetime,
+        interval: timedelta,
+    ) -> bool:
+        """Return whether a forecast should be requested again."""
+        return attempted_at is None or now - attempted_at >= interval
+
+    @staticmethod
+    def _future_forecast_items(
+        items: list[dict[str, Any]],
+        timestamp_key: str,
+        now: datetime,
+    ) -> list[dict[str, Any]]:
+        """Remove expired items from cached forecast output."""
+        future_items = []
+        for item in items:
+            timestamp = item.get(timestamp_key)
+            parsed_timestamp = (
+                dt_util.parse_datetime(timestamp) if isinstance(timestamp, str) else None
+            )
+            if parsed_timestamp is not None and parsed_timestamp >= now:
+                future_items.append(item)
+        return future_items
+
+    def _current_tidewater_forecast(
+        self,
+        now: datetime,
+    ) -> list[dict[str, Any]] | None:
+        """Return unexpired astronomical tide predictions."""
+        if self._tidewater_forecast is None:
+            return None
+        return self._future_forecast_items(
+            self._tidewater_forecast,
+            "prediction_time",
+            now,
+        )
+
+    def _current_dkss_forecast(self, now: datetime) -> dict[str, Any] | None:
+        """Return DKSS metadata with unexpired forecast values."""
+        if self._dkss_forecast is None:
+            return None
+        return {
+            **self._dkss_forecast,
+            "forecast": self._future_forecast_items(
+                self._dkss_forecast.get("forecast", []),
+                "datetime",
+                now,
+            ),
+        }
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from DMI API.
@@ -175,47 +248,72 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if self.setup_type == SETUP_TYPE_ADVANCED:
                     await self._async_merge_backup_observations(observations)
 
-                tidewater_forecast: list[dict[str, Any]] | None = None
-                if self.setup_type == SETUP_TYPE_SEA and self.tidewater_station_id:
+                if (
+                    self.setup_type == SETUP_TYPE_SEA
+                    and self.tidewater_station_id
+                    and self._forecast_refresh_due(
+                        self._tidewater_forecast_attempted_at,
+                        now,
+                        TIDEWATER_FORECAST_REFRESH_INTERVAL,
+                    )
+                ):
                     await asyncio.sleep(REQUEST_STAGGER_SECONDS)
+                    self._tidewater_forecast_attempted_at = now
                     try:
-                        tidewater_forecast = await self.api.get_tidewater_forecast(
+                        self._tidewater_forecast = await self.api.get_tidewater_forecast(
                             self.tidewater_station_id,
                             now,
                             now + timedelta(hours=TIDEWATER_FORECAST_HOURS),
                         )
-                    except RateLimitExceeded:
-                        raise
-                    except (CannotConnect, RequestTimeout, UpstreamError, TimeoutError) as err:
+                    except (
+                        CannotConnect,
+                        RateLimitExceeded,
+                        RequestTimeout,
+                        UpstreamError,
+                        TimeoutError,
+                    ) as err:
                         _LOGGER.warning(
-                            "Failed to fetch tide predictions for station %s: %s",
+                            "Failed to refresh tide predictions for station %s; "
+                            "continuing with cached predictions: %s",
                             self.tidewater_station_id,
                             err,
                         )
+                tidewater_forecast = self._current_tidewater_forecast(now)
 
-                dkss_forecast: dict[str, Any] | None = None
                 if (
                     self.setup_type == SETUP_TYPE_SEA
                     and self.latitude is not None
                     and self.longitude is not None
+                    and self._forecast_refresh_due(
+                        self._dkss_forecast_attempted_at,
+                        now,
+                        DKSS_FORECAST_REFRESH_INTERVAL,
+                    )
                 ):
                     await asyncio.sleep(REQUEST_STAGGER_SECONDS)
+                    self._dkss_forecast_attempted_at = now
                     try:
-                        dkss_forecast = await self.api.get_dkss_forecast(
+                        self._dkss_forecast = await self.api.get_dkss_forecast(
                             self.latitude,
                             self.longitude,
                             now,
                             now + timedelta(hours=DKSS_FORECAST_HOURS),
                         )
-                    except RateLimitExceeded:
-                        raise
-                    except (CannotConnect, RequestTimeout, UpstreamError, TimeoutError) as err:
+                    except (
+                        CannotConnect,
+                        RateLimitExceeded,
+                        RequestTimeout,
+                        UpstreamError,
+                        TimeoutError,
+                    ) as err:
                         _LOGGER.warning(
-                            "Failed to fetch DKSS forecast at %s,%s: %s",
+                            "Failed to refresh DKSS forecast at %s,%s; "
+                            "continuing with cached forecast: %s",
                             self.latitude,
                             self.longitude,
                             err,
                         )
+                dkss_forecast = self._current_dkss_forecast(now)
 
                 # Fetch forecast if coordinates are available and enabled.
                 # Stagger this slightly after the observations call so the
@@ -266,6 +364,13 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # than surfacing an error during the cooldown window.
             if self.data is not None:
                 return self.data
+            if self.setup_type == SETUP_TYPE_SEA:
+                _LOGGER.warning(
+                    "Loading sea entry %s without initial data; DMI will be retried "
+                    "on the next scheduled update",
+                    self.station_id,
+                )
+                return self._empty_sea_data()
             raise UpdateFailed(f"Rate limit exceeded, will retry after cooldown: {err}") from err
         except UpstreamError as err:
             cached_data = self._return_cached_data(

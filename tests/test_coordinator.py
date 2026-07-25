@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
@@ -30,7 +30,10 @@ from custom_components.dmi.const import (
     CONF_UPDATE_INTERVAL,
     DOMAIN,
 )
-from custom_components.dmi.coordinator import REQUEST_STAGGER_SECONDS, DMIDataUpdateCoordinator
+from custom_components.dmi.coordinator import (
+    REQUEST_STAGGER_SECONDS,
+    DMIDataUpdateCoordinator,
+)
 
 
 class TestDMIDataUpdateCoordinator:
@@ -147,17 +150,27 @@ class TestDMIDataUpdateCoordinator:
         }
         mock_api_client.get_dkss_forecast = AsyncMock(return_value=dkss_forecast)
         coordinator = DMIDataUpdateCoordinator(hass, entry, mock_api_client)
+        now = datetime(2026, 7, 25, 9, 35, tzinfo=UTC)
 
-        with patch(
-            "custom_components.dmi.coordinator.asyncio.sleep",
-            new_callable=AsyncMock,
-        ) as mock_sleep:
+        with (
+            patch(
+                "custom_components.dmi.coordinator.asyncio.sleep",
+                new_callable=AsyncMock,
+            ) as mock_sleep,
+            patch(
+                "custom_components.dmi.coordinator.dt_util.utcnow",
+                return_value=now,
+            ),
+        ):
             data = await coordinator._async_update_data()
+            cached_data = await coordinator._async_update_data()
 
         assert data["tidewater_forecast"] == predictions
         assert data["dkss_forecast"] == dkss_forecast
+        assert cached_data["tidewater_forecast"] == predictions
+        assert cached_data["dkss_forecast"] == dkss_forecast
         assert coordinator.tidewater_station_id == "29393"
-        mock_api_client.get_sea_observations.assert_awaited_once_with("30017")
+        assert mock_api_client.get_sea_observations.await_count == 2
         mock_api_client.get_tidewater_forecast.assert_awaited_once()
         forecast_args = mock_api_client.get_tidewater_forecast.await_args.args
         assert forecast_args[0] == "29393"
@@ -171,6 +184,69 @@ class TestDMIDataUpdateCoordinator:
             call(REQUEST_STAGGER_SECONDS),
         ]
         mock_api_client.get_forecast.assert_not_called()
+
+    async def test_sea_forecast_rate_limit_keeps_cached_forecasts(
+        self,
+        hass: HomeAssistant,
+        mock_api_client: MagicMock,
+    ) -> None:
+        """Test forecast rate limits do not discard live sea observations."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Korsør",
+            data={
+                "setup_type": "sea",
+                CONF_STATION_ID: "30017",
+                CONF_STATION_NAME: "Korsør",
+                CONF_TIDEWATER_STATION_ID: "29393",
+                "latitude": 55.33,
+                "longitude": 11.14,
+            },
+            options={CONF_UPDATE_INTERVAL: 10},
+        )
+        entry.add_to_hass(hass)
+        now = datetime(2026, 7, 25, 9, 35, tzinfo=UTC)
+        predictions = [
+            {
+                "value": 16.1,
+                "prediction_time": "2026-07-25T09:40:00Z",
+            }
+        ]
+        dkss_forecast = {
+            "collection_id": "dkss_idw",
+            "forecast": [{"datetime": "2026-07-25T10:00:00Z", "value": 12.3}],
+        }
+        mock_api_client.get_sea_observations = AsyncMock(
+            return_value={"sealev_dvr": {"value": 26.0}}
+        )
+        mock_api_client.get_tidewater_forecast = AsyncMock(
+            side_effect=[predictions, RateLimitExceeded("Rate limit")]
+        )
+        mock_api_client.get_dkss_forecast = AsyncMock(
+            side_effect=[dkss_forecast, RateLimitExceeded("Rate limit")]
+        )
+        coordinator = DMIDataUpdateCoordinator(hass, entry, mock_api_client)
+
+        with (
+            patch(
+                "custom_components.dmi.coordinator.asyncio.sleep",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "custom_components.dmi.coordinator.dt_util.utcnow",
+                return_value=now,
+            ),
+        ):
+            await coordinator._async_update_data()
+            coordinator._tidewater_forecast_attempted_at = None
+            coordinator._dkss_forecast_attempted_at = None
+            data = await coordinator._async_update_data()
+
+        assert data["observations"]["sealev_dvr"]["value"] == 26.0
+        assert data["tidewater_forecast"] == predictions
+        assert data["dkss_forecast"] == dkss_forecast
+        assert mock_api_client.get_tidewater_forecast.await_count == 2
+        assert mock_api_client.get_dkss_forecast.await_count == 2
 
     async def test_advanced_update_merges_backup_observations(
         self,
@@ -422,6 +498,38 @@ class TestDMIDataUpdateCoordinator:
 
         with pytest.raises(UpdateFailed):
             await coordinator._async_update_data()
+
+    async def test_sea_initial_rate_limit_returns_unavailable_data(
+        self,
+        hass: HomeAssistant,
+        mock_api_client: MagicMock,
+    ) -> None:
+        """Test a rate limit does not prevent initial sea entry setup."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Korsør",
+            data={
+                "setup_type": "sea",
+                CONF_STATION_ID: "30017",
+                CONF_STATION_NAME: "Korsør",
+            },
+            options={CONF_UPDATE_INTERVAL: 10},
+        )
+        entry.add_to_hass(hass)
+        mock_api_client.get_sea_observations = AsyncMock(
+            side_effect=RateLimitExceeded("Rate limit")
+        )
+        coordinator = DMIDataUpdateCoordinator(hass, entry, mock_api_client)
+
+        data = await coordinator._async_update_data()
+
+        assert data == {
+            "observations": {},
+            "forecast": None,
+            "tidewater_forecast": None,
+            "dkss_forecast": None,
+            "last_updated": None,
+        }
 
     async def test_async_update_data_connection_error_uses_cached_data(
         self,
