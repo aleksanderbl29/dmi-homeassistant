@@ -18,8 +18,19 @@
         }
       },
       "tidewater_station": {
-        "title": "Tidevandsprognosestation",
-        "description": "Vælg det DMI-prognosepunkt, der skal bruges til astronomiske tidevandsprognoser. Det nærmeste punkt er valgt som standard, fordi observations- og prognosestationer er separate.",
+        "title": "Kilde til tidevandsprognose",
+        "description": "Astronomiske tidevandsprognoser hentes fra {prediction_station_name} ({prediction_station_id}), {distance} km fra observationsstationen.",
+        "menu_options": {
+          "tidewater_accept": "Brug denne prognosestation",
+          "tidewater_change": "Vælg en anden prognosestation"
+        }
+      },
+      "tidewater_accept": {
+        "title": "Kilde til tidevandsprognose"
+      },
+      "tidewater_change": {
+        "title": "Vælg tidevandsprognosestation",
+        "description": "Vælg en anden DMI-station til astronomiske tidevandsprognoser.",
         "data": {
           "tidewater_station_id": "Prognosestation"
         }

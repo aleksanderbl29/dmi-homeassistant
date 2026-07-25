@@ -18,8 +18,19 @@
         }
       },
       "tidewater_station": {
-        "title": "Tide Prediction Station",
-        "description": "Choose the DMI prediction point to use for astronomical tide forecasts. The closest point is selected by default because observation and prediction stations are separate.",
+        "title": "Tide Prediction Source",
+        "description": "Astronomical tide predictions will come from {prediction_station_name} ({prediction_station_id}), {distance} km from the observation station.",
+        "menu_options": {
+          "tidewater_accept": "Use this prediction station",
+          "tidewater_change": "Choose another prediction station"
+        }
+      },
+      "tidewater_accept": {
+        "title": "Tide Prediction Source"
+      },
+      "tidewater_change": {
+        "title": "Choose Tide Prediction Station",
+        "description": "Select a different DMI station for astronomical tide predictions.",
         "data": {
           "tidewater_station_id": "Prediction station"
         }

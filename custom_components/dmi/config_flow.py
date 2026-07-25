@@ -132,14 +132,54 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_tidewater_station(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Choose the separate DMI station used for astronomical predictions."""
+        """Confirm the automatically matched astronomical prediction station."""
+        if self._sea_primary is None:
+            return await self.async_step_sea()
+
+        if not await self._async_load_tidewater_stations():
+            return self.async_show_form(
+                step_id="tidewater_station",
+                data_schema=vol.Schema({}),
+                errors={"base": "cannot_connect"},
+            )
+
+        nearest = self._nearest_tidewater_station()
+        distance = self._tidewater_station_distance(nearest)
+        return self.async_show_menu(
+            step_id="tidewater_station",
+            menu_options=["tidewater_accept", "tidewater_change"],
+            description_placeholders={
+                "prediction_station_name": str(nearest.get("name") or nearest["stationId"]),
+                "prediction_station_id": str(nearest["stationId"]),
+                "distance": f"{distance:.1f}",
+            },
+        )
+
+    async def async_step_tidewater_accept(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Use the automatically matched astronomical prediction station."""
+        if self._sea_primary is None:
+            return await self.async_step_sea()
+        if not await self._async_load_tidewater_stations():
+            return self.async_show_form(
+                step_id="tidewater_accept",
+                data_schema=vol.Schema({}),
+                errors={"base": "cannot_connect"},
+            )
+        return await self._async_create_sea_entry(self._nearest_tidewater_station())
+
+    async def async_step_tidewater_change(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Allow explicit selection of a different prediction station."""
         if self._sea_primary is None:
             return await self.async_step_sea()
 
         errors: dict[str, str] = {}
         if not await self._async_load_tidewater_stations():
             return self.async_show_form(
-                step_id="tidewater_station",
+                step_id="tidewater_change",
                 data_schema=vol.Schema({}),
                 errors={"base": "cannot_connect"},
             )
@@ -152,26 +192,11 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
             if prediction_station is None:
                 errors["base"] = "invalid_station"
             else:
-                station_id = str(self._sea_primary[CONF_STATION_ID])
-                station_name = str(self._sea_primary[CONF_STATION_NAME])
-                data = {
-                    **self._sea_primary,
-                    CONF_TIDEWATER_STATION_ID: str(prediction_station["stationId"]),
-                    CONF_TIDEWATER_STATION_NAME: str(
-                        prediction_station.get("name") or prediction_station["stationId"]
-                    ),
-                    CONF_TIDEWATER_LATITUDE: prediction_station.get("latitude"),
-                    CONF_TIDEWATER_LONGITUDE: prediction_station.get("longitude"),
-                    CONF_LOW_ASTRONOMICAL_TIDE: prediction_station.get("lowAstronomicalTide"),
-                    CONF_MEAN_LOW_WATER_SPRING: prediction_station.get("meanLowWaterSpring"),
-                }
-                await self.async_set_unique_id(f"dmi_sea_{station_id}")
-                self._abort_if_unique_id_configured()
-                return self.async_create_entry(title=station_name, data=data)
+                return await self._async_create_sea_entry(prediction_station)
 
         nearest_station_id = self._nearest_tidewater_station_id()
         return self.async_show_form(
-            step_id="tidewater_station",
+            step_id="tidewater_change",
             data_schema=vol.Schema(
                 {
                     vol.Required(
@@ -187,6 +212,31 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
             ),
             errors=errors,
         )
+
+    async def _async_create_sea_entry(
+        self,
+        prediction_station: Mapping[str, Any],
+    ) -> ConfigFlowResult:
+        """Create a sea entry with observation and prediction station data."""
+        if self._sea_primary is None:
+            return await self.async_step_sea()
+
+        station_id = str(self._sea_primary[CONF_STATION_ID])
+        station_name = str(self._sea_primary[CONF_STATION_NAME])
+        data = {
+            **self._sea_primary,
+            CONF_TIDEWATER_STATION_ID: str(prediction_station["stationId"]),
+            CONF_TIDEWATER_STATION_NAME: str(
+                prediction_station.get("name") or prediction_station["stationId"]
+            ),
+            CONF_TIDEWATER_LATITUDE: prediction_station.get("latitude"),
+            CONF_TIDEWATER_LONGITUDE: prediction_station.get("longitude"),
+            CONF_LOW_ASTRONOMICAL_TIDE: prediction_station.get("lowAstronomicalTide"),
+            CONF_MEAN_LOW_WATER_SPRING: prediction_station.get("meanLowWaterSpring"),
+        }
+        await self.async_set_unique_id(f"dmi_sea_{station_id}")
+        self._abort_if_unique_id_configured()
+        return self.async_create_entry(title=station_name, data=data)
 
     async def async_step_station(
         self, user_input: dict[str, Any] | None = None
@@ -726,11 +776,14 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def _nearest_tidewater_station_id(self) -> str:
         """Return the closest prediction station to the selected gauge."""
-        nearest = min(
+        return str(self._nearest_tidewater_station()["stationId"])
+
+    def _nearest_tidewater_station(self) -> dict[str, Any]:
+        """Return the closest prediction station to the selected gauge."""
+        return min(
             self._tidewater_stations,
             key=self._tidewater_station_distance,
         )
-        return str(nearest["stationId"])
 
     def _build_tidewater_station_options(self) -> list[dict[str, str]]:
         """Build prediction-station options ordered by proximity."""
