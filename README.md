@@ -119,7 +119,8 @@ available, and DMI quality-control status as state attributes. Water-temperature
 are taken inside harbors and are not standardized measurements of the undisturbed sea surface.
 
 DMI uses a separate station catalog for astronomical tide predictions. During setup, the
-nearest prediction point is selected by default and can be changed before the entry is created.
+integration shows which nearby prediction point it matched automatically. The normal path
+accepts that match; choosing another station is available through a separate change action.
 The predicted-level sensor includes the next 24 hours of 10-minute values in its `forecast`
 attribute, as well as summaries of the next high and low tide. These are astronomical tide
 predictions; they do not include weather-driven storm-surge effects from DMI's DKSS model.
