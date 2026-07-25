@@ -26,6 +26,7 @@ from custom_components.dmi.const import (
     CONF_SOURCE_TYPE,
     CONF_STATION_ID,
     CONF_STATION_NAME,
+    CONF_TIDEWATER_STATION_ID,
     CONF_UPDATE_INTERVAL,
     DOMAIN,
 )
@@ -99,6 +100,60 @@ class TestDMIDataUpdateCoordinator:
         assert data["observations"]["temp_dry"][CONF_SOURCE_STATION_ID] == "06180"
         mock_api_client.get_observations.assert_called_once_with("06180")
         mock_api_client.get_forecast.assert_called_once()
+
+    async def test_sea_update_fetches_tidewater_forecast(
+        self,
+        hass: HomeAssistant,
+        mock_api_client: MagicMock,
+    ) -> None:
+        """Test sea entries fetch observations and astronomical predictions."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Korsør",
+            data={
+                "setup_type": "sea",
+                CONF_STATION_ID: "30017",
+                CONF_STATION_NAME: "Korsør",
+                CONF_TIDEWATER_STATION_ID: "29393",
+            },
+            options={CONF_UPDATE_INTERVAL: 10},
+        )
+        entry.add_to_hass(hass)
+        mock_api_client.get_sea_observations = AsyncMock(
+            return_value={
+                "sealev_dvr": {
+                    "value": 26.0,
+                    "observed": "2026-07-25T09:30:00Z",
+                }
+            }
+        )
+        predictions = [
+            {
+                "value": 16.1,
+                "prediction_time": "2026-07-25T09:40:00Z",
+                "prediction_type": "10minutes",
+                "created": "2026-03-23T10:18:26Z",
+                "station_id": "29393",
+            }
+        ]
+        mock_api_client.get_tidewater_forecast = AsyncMock(return_value=predictions)
+        coordinator = DMIDataUpdateCoordinator(hass, entry, mock_api_client)
+
+        with patch(
+            "custom_components.dmi.coordinator.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as mock_sleep:
+            data = await coordinator._async_update_data()
+
+        assert data["tidewater_forecast"] == predictions
+        assert coordinator.tidewater_station_id == "29393"
+        mock_api_client.get_sea_observations.assert_awaited_once_with("30017")
+        mock_api_client.get_tidewater_forecast.assert_awaited_once()
+        forecast_args = mock_api_client.get_tidewater_forecast.await_args.args
+        assert forecast_args[0] == "29393"
+        assert forecast_args[2] - forecast_args[1] == timedelta(hours=24)
+        mock_sleep.assert_awaited_once_with(REQUEST_STAGGER_SECONDS)
+        mock_api_client.get_forecast.assert_not_called()
 
     async def test_advanced_update_merges_backup_observations(
         self,

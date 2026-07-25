@@ -17,6 +17,13 @@
           "station_id": "Vandstandsstation"
         }
       },
+      "tidewater_station": {
+        "title": "Tidevandsprognosestation",
+        "description": "Vælg det DMI-prognosepunkt, der skal bruges til astronomiske tidevandsprognoser. Det nærmeste punkt er valgt som standard, fordi observations- og prognosestationer er separate.",
+        "data": {
+          "tidewater_station_id": "Prognosestation"
+        }
+      },
       "station": {
         "title": "Opsætning af DMI Vejr",
         "description": "Vælg en vejrstation. Du kan eventuelt bruge din Home Assistant-placering til prognoser.",

@@ -19,6 +19,7 @@ from custom_components.dmi.const import (
     CONF_INCLUDE_FORECAST,
     CONF_SETUP_TYPE,
     CONF_STATION_ID,
+    CONF_TIDEWATER_STATION_ID,
     CONF_UPDATE_INTERVAL,
     CONF_USE_COORDINATES,
     DOMAIN,
@@ -124,6 +125,26 @@ class TestDMIConfigFlow:
         with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
             mock_api = MagicMock()
             mock_api.get_sea_stations = AsyncMock(return_value=sea_stations)
+            mock_api.get_tidewater_stations = AsyncMock(
+                return_value=[
+                    {
+                        "stationId": "29395",
+                        "name": "Korsør Fiskerihavn",
+                        "latitude": 55.3323,
+                        "longitude": 11.1309,
+                        "lowAstronomicalTide": -22.7,
+                        "meanLowWaterSpring": -14.5,
+                    },
+                    {
+                        "stationId": "29393",
+                        "name": "Korsør",
+                        "latitude": 55.3306,
+                        "longitude": 11.1422,
+                        "lowAstronomicalTide": -23.8,
+                        "meanLowWaterSpring": -15.0,
+                    },
+                ]
+            )
             mock_api_class.return_value = mock_api
 
             result = await hass.config_entries.flow.async_init(
@@ -138,11 +159,26 @@ class TestDMIConfigFlow:
                 result["flow_id"],
                 {CONF_STATION_ID: "30017"},
             )
+            assert result["step_id"] == "tidewater_station"
+            prediction_options = _selector_options(result, CONF_TIDEWATER_STATION_ID)
+            assert [option["value"] for option in prediction_options] == [
+                "29393",
+                "29395",
+            ]
+            assert _field_default(result, CONF_TIDEWATER_STATION_ID) == "29393"
+            assert "0.2 km" in prediction_options[0]["label"]
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_TIDEWATER_STATION_ID: "29393"},
+            )
 
         assert result["type"] == FlowResultType.CREATE_ENTRY
         assert result["title"] == "Korsør"
         assert result["data"][CONF_SETUP_TYPE] == "sea"
         assert result["data"][CONF_STATION_ID] == "30017"
+        assert result["data"][CONF_TIDEWATER_STATION_ID] == "29393"
+        assert result["data"]["tidewater_station_name"] == "Korsør"
+        assert result["data"]["low_astronomical_tide"] == -23.8
         assert result["data"][CONF_USE_COORDINATES] is False
 
     async def test_normal_flow_creates_entry(

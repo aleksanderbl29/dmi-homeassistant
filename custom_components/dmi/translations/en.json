@@ -17,6 +17,13 @@
           "station_id": "Sea-level station"
         }
       },
+      "tidewater_station": {
+        "title": "Tide Prediction Station",
+        "description": "Choose the DMI prediction point to use for astronomical tide forecasts. The closest point is selected by default because observation and prediction stations are separate.",
+        "data": {
+          "tidewater_station_id": "Prediction station"
+        }
+      },
       "station": {
         "title": "DMI Weather Setup",
         "description": "Choose a weather station. You can optionally use your Home Assistant location for forecasts.",

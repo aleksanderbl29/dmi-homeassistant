@@ -31,6 +31,7 @@ from .const import (
     CONF_SOURCE_TYPE,
     CONF_STATION_ID,
     CONF_STATION_NAME,
+    CONF_TIDEWATER_STATION_ID,
     CONF_UPDATE_INTERVAL,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
@@ -49,6 +50,7 @@ RATE_LIMIT_COOLDOWN = timedelta(minutes=1)
 # cycle (observations, then forecast), so we never burst two requests
 # back-to-back even though they're both well within normal limits.
 REQUEST_STAGGER_SECONDS = 2
+TIDEWATER_FORECAST_HOURS = 24
 
 
 class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -73,6 +75,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.station_id: str = str(config_entry.data.get(CONF_STATION_ID) or "")
         self.station_name: str = str(config_entry.data.get(CONF_STATION_NAME) or "DMI Weather")
         self.setup_type: str = str(config_entry.data.get(CONF_SETUP_TYPE) or "normal")
+        self.tidewater_station_id: str = str(config_entry.data.get(CONF_TIDEWATER_STATION_ID) or "")
         self.backup_stations: list[dict[str, Any]] = list(
             config_entry.data.get(CONF_BACKUP_STATIONS, [])
         )
@@ -171,6 +174,24 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if self.setup_type == SETUP_TYPE_ADVANCED:
                     await self._async_merge_backup_observations(observations)
 
+                tidewater_forecast: list[dict[str, Any]] | None = None
+                if self.setup_type == SETUP_TYPE_SEA and self.tidewater_station_id:
+                    await asyncio.sleep(REQUEST_STAGGER_SECONDS)
+                    try:
+                        tidewater_forecast = await self.api.get_tidewater_forecast(
+                            self.tidewater_station_id,
+                            now,
+                            now + timedelta(hours=TIDEWATER_FORECAST_HOURS),
+                        )
+                    except RateLimitExceeded:
+                        raise
+                    except (CannotConnect, RequestTimeout, UpstreamError, TimeoutError) as err:
+                        _LOGGER.warning(
+                            "Failed to fetch tide predictions for station %s: %s",
+                            self.tidewater_station_id,
+                            err,
+                        )
+
                 # Fetch forecast if coordinates are available and enabled.
                 # Stagger this slightly after the observations call so the
                 # two requests in this cycle are never sent back-to-back.
@@ -204,6 +225,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return {
                     "observations": observations,
                     "forecast": forecast,
+                    "tidewater_forecast": tidewater_forecast,
                     "last_updated": now,
                 }
 
