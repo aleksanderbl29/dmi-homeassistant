@@ -108,11 +108,20 @@ selected tide gauge reports, the integration creates:
 | Sea Level Local Reference | cm | Sea level relative to the station's local zero |
 | Sea Level Registration | cm | Sea-level registration (Coastal Authority data uses DVR90) |
 | Water Temperature | °C | Supporting harbor water-temperature measurement |
+| Predicted Sea Level | cm | Next 10-minute astronomical tide prediction with a 24-hour series |
+| Next High Tide | cm | Next predicted astronomical high tide and its timestamp |
+| Next Low Tide | cm | Next predicted astronomical low tide and its timestamp |
 | Last Successful Update | timestamp | Time of the last successful data fetch from DMI |
 
 Sea-level readings also expose their observation timestamp, API creation timestamp when
 available, and DMI quality-control status as state attributes. Water-temperature measurements
 are taken inside harbors and are not standardized measurements of the undisturbed sea surface.
+
+DMI uses a separate station catalog for astronomical tide predictions. During setup, the
+nearest prediction point is selected by default and can be changed before the entry is created.
+The predicted-level sensor includes the next 24 hours of 10-minute values in its `forecast`
+attribute, as well as summaries of the next high and low tide. These are astronomical tide
+predictions; they do not include weather-driven storm-surge effects from DMI's DKSS model.
 
 ## Data Sources And API Keys
 
