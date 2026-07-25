@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import UpdateFailed
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dmi.api import (
@@ -422,10 +421,18 @@ class TestDMIDataUpdateCoordinator:
 
         mock_api_client.get_observations = AsyncMock(side_effect=get_observations)
 
-        with pytest.raises(UpdateFailed):
-            await advanced_coordinator._async_update_data()
+        data = await advanced_coordinator._async_update_data()
 
         assert advanced_coordinator._rate_limited_until is not None
+        assert data["observations"] == {}
+
+        advanced_coordinator.data = data
+        calls_before_cooldown = mock_api_client.get_observations.await_count
+
+        cached_data = await advanced_coordinator._async_update_data()
+
+        assert cached_data is data
+        assert mock_api_client.get_observations.await_count == calls_before_cooldown
 
     async def test_rate_limit_cooldown_serves_cached_data(
         self,
@@ -488,16 +495,23 @@ class TestDMIDataUpdateCoordinator:
         assert data["forecast"] is None
         mock_api_client.get_forecast.assert_not_called()
 
-    async def test_async_update_data_rate_limit(
+    async def test_initial_rate_limit_returns_unavailable_data(
         self,
         coordinator: DMIDataUpdateCoordinator,
         mock_api_client: MagicMock,
     ) -> None:
-        """Test rate limit error raises UpdateFailed."""
+        """Test a rate limit does not prevent initial entry setup."""
         mock_api_client.get_observations.side_effect = RateLimitExceeded("Rate limit")
 
-        with pytest.raises(UpdateFailed):
-            await coordinator._async_update_data()
+        data = await coordinator._async_update_data()
+
+        assert data == {
+            "observations": {},
+            "forecast": None,
+            "tidewater_forecast": None,
+            "dkss_forecast": None,
+            "last_updated": None,
+        }
 
     async def test_sea_initial_rate_limit_returns_unavailable_data(
         self,

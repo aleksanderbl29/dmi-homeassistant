@@ -138,8 +138,8 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return self.data
 
     @staticmethod
-    def _empty_sea_data() -> dict[str, Any]:
-        """Return an unavailable sea payload that allows setup to complete."""
+    def _empty_data() -> dict[str, Any]:
+        """Return an unavailable payload that allows setup to complete."""
         return {
             "observations": {},
             "forecast": None,
@@ -353,7 +353,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "last_updated": now,
                 }
 
-        except RateLimitExceeded as err:
+        except RateLimitExceeded:
             self._rate_limited_until = now + RATE_LIMIT_COOLDOWN
             _LOGGER.warning(
                 "DMI rate limit hit for %s, pausing updates until %s",
@@ -364,14 +364,12 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # than surfacing an error during the cooldown window.
             if self.data is not None:
                 return self.data
-            if self.setup_type == SETUP_TYPE_SEA:
-                _LOGGER.warning(
-                    "Loading sea entry %s without initial data; DMI will be retried "
-                    "on the next scheduled update",
-                    self.station_id,
-                )
-                return self._empty_sea_data()
-            raise UpdateFailed(f"Rate limit exceeded, will retry after cooldown: {err}") from err
+            _LOGGER.warning(
+                "Loading entry %s without initial data; DMI will be retried "
+                "on the next scheduled update",
+                self.station_id,
+            )
+            return self._empty_data()
         except UpstreamError as err:
             cached_data = self._return_cached_data(
                 log_message=(

@@ -123,6 +123,24 @@ class TestIntegrationSetup:
         assert coordinator.data["observations"] == {}
         assert coordinator.data["last_updated"] is None
 
+    async def test_weather_setup_entry_loads_during_rate_limit(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry: MockConfigEntry,
+        mock_dmi_api: MagicMock,
+    ) -> None:
+        """Test a weather entry loads when its initial request is throttled."""
+        mock_config_entry.add_to_hass(hass)
+        mock_dmi_api.get_observations = AsyncMock(side_effect=RateLimitExceeded("Rate limit"))
+
+        await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        assert mock_config_entry.state is ConfigEntryState.LOADED
+        coordinator = hass.data[DOMAIN][mock_config_entry.entry_id]
+        assert coordinator.data["observations"] == {}
+        assert coordinator.data["last_updated"] is None
+
 
 class TestIntegrationUnload:
     """Test cases for integration unload."""
