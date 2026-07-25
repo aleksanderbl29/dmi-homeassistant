@@ -284,6 +284,30 @@ class TestDMITidewaterSensor:
         }
         assert sensor.extra_state_attributes[CONF_LOW_ASTRONOMICAL_TIDE] == -23.8
 
+    def test_tide_sensor_handles_unavailable_coordinator(self) -> None:
+        """Test tide prediction sensors are unavailable before coordinator data."""
+        coordinator = MagicMock(spec=DMIDataUpdateCoordinator)
+        coordinator.data = None
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Korsør",
+            data={
+                "setup_type": "sea",
+                CONF_STATION_ID: "30017",
+                CONF_STATION_NAME: "Korsør",
+            },
+        )
+        description = next(
+            item for item in TIDEWATER_SENSOR_TYPES if item.key == "predicted_sea_level"
+        )
+
+        sensor = DMITidewaterSensor(coordinator, entry, description)
+
+        assert sensor.native_value is None
+        assert sensor.extra_state_attributes["forecast"] == []
+        assert "next_high_tide" not in sensor.extra_state_attributes
+        assert "next_low_tide" not in sensor.extra_state_attributes
+
 
 class TestDMIDKSSForecastSensor:
     """Test the weather-driven sea-level forecast sensor."""
@@ -329,6 +353,27 @@ class TestDMIDKSSForecastSensor:
         }
         assert sensor.extra_state_attributes["model_collection"] == "dkss_idw"
         assert sensor.extra_state_attributes["reference"] == ("deviation from mean sea level")
+
+    def test_dkss_sensor_handles_unavailable_coordinator(self) -> None:
+        """Test DKSS sensor gracefully handles unavailable forecast data."""
+        coordinator = MagicMock(spec=DMIDataUpdateCoordinator)
+        coordinator.data = None
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Korsør",
+            data={
+                "setup_type": "sea",
+                CONF_STATION_ID: "30017",
+                CONF_STATION_NAME: "Korsør",
+            },
+        )
+
+        sensor = DMIDKSSForecastSensor(coordinator, entry)
+
+        assert sensor.native_value is None
+        assert sensor.extra_state_attributes["forecast"] == []
+        assert "forecast_high" not in sensor.extra_state_attributes
+        assert "forecast_low" not in sensor.extra_state_attributes
 
 
 class TestSensorTypes:

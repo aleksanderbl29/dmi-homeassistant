@@ -12,6 +12,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dmi.api import CannotConnect
+from custom_components.dmi.config_flow import DMIConfigFlow
 from custom_components.dmi.const import (
     CONF_BACKUP_PARAMETERS,
     CONF_BACKUP_STATION_NAME_SUFFIX,
@@ -250,6 +251,25 @@ class TestDMIConfigFlow:
         assert result["type"] == FlowResultType.CREATE_ENTRY
         assert result["data"][CONF_TIDEWATER_STATION_ID] == "29395"
         assert result["data"]["tidewater_station_name"] == "Korsør Fiskerihavn"
+
+    async def test_sea_flow_rejects_invalid_station_selection(
+        self,
+    ) -> None:
+        """Test a stale or invalid tide-gauge selection is rejected."""
+        flow = DMIConfigFlow()
+        flow._sea_stations = [
+            {
+                "stationId": "30017",
+                "name": "Korsør",
+                "parameterId": ["sealev_dvr"],
+            }
+        ]
+
+        result = await flow.async_step_sea({CONF_STATION_ID: "missing"})
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "sea"
+        assert result["errors"]["base"] == "invalid_station"
 
     async def test_normal_flow_creates_entry(
         self,
