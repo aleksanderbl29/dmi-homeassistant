@@ -115,6 +115,8 @@ class TestDMIDataUpdateCoordinator:
                 CONF_STATION_ID: "30017",
                 CONF_STATION_NAME: "Korsør",
                 CONF_TIDEWATER_STATION_ID: "29393",
+                "latitude": 55.33,
+                "longitude": 11.14,
             },
             options={CONF_UPDATE_INTERVAL: 10},
         )
@@ -137,6 +139,13 @@ class TestDMIDataUpdateCoordinator:
             }
         ]
         mock_api_client.get_tidewater_forecast = AsyncMock(return_value=predictions)
+        dkss_forecast = {
+            "collection_id": "dkss_idw",
+            "model_latitude": 55.329,
+            "model_longitude": 11.146,
+            "forecast": [{"datetime": "2026-07-25T10:00:00Z", "value": 12.3}],
+        }
+        mock_api_client.get_dkss_forecast = AsyncMock(return_value=dkss_forecast)
         coordinator = DMIDataUpdateCoordinator(hass, entry, mock_api_client)
 
         with patch(
@@ -146,13 +155,21 @@ class TestDMIDataUpdateCoordinator:
             data = await coordinator._async_update_data()
 
         assert data["tidewater_forecast"] == predictions
+        assert data["dkss_forecast"] == dkss_forecast
         assert coordinator.tidewater_station_id == "29393"
         mock_api_client.get_sea_observations.assert_awaited_once_with("30017")
         mock_api_client.get_tidewater_forecast.assert_awaited_once()
         forecast_args = mock_api_client.get_tidewater_forecast.await_args.args
         assert forecast_args[0] == "29393"
         assert forecast_args[2] - forecast_args[1] == timedelta(hours=24)
-        mock_sleep.assert_awaited_once_with(REQUEST_STAGGER_SECONDS)
+        mock_api_client.get_dkss_forecast.assert_awaited_once()
+        dkss_args = mock_api_client.get_dkss_forecast.await_args.args
+        assert dkss_args[:2] == (55.33, 11.14)
+        assert dkss_args[3] - dkss_args[2] == timedelta(hours=120)
+        assert mock_sleep.await_args_list == [
+            call(REQUEST_STAGGER_SECONDS),
+            call(REQUEST_STAGGER_SECONDS),
+        ]
         mock_api_client.get_forecast.assert_not_called()
 
     async def test_advanced_update_merges_backup_observations(

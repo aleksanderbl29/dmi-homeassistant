@@ -633,6 +633,7 @@ def mock_api_client() -> MagicMock:
     )
     client.get_tidewater_stations = AsyncMock(return_value=[])
     client.get_tidewater_forecast = AsyncMock(return_value=[])
+    client.get_dkss_forecast = AsyncMock(return_value=None)
 
     # Return processed forecast data (with temperature converted from Kelvin)
     client.get_forecast = AsyncMock(

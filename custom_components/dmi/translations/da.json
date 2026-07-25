@@ -136,6 +136,7 @@
       "predicted_sea_level": { "name": "Forudsagt vandstand" },
       "next_high_tide": { "name": "Næste højvande" },
       "next_low_tide": { "name": "Næste lavvande" },
+      "dkss_forecast_sea_level": { "name": "DKSS-prognose for vandstand" },
       "last_fetch": { "name": "Seneste vellykkede opdatering" }
     }
   }

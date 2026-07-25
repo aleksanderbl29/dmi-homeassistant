@@ -25,6 +25,7 @@ from .const import (
     CONF_STATION_NAME,
     CONF_TIDEWATER_STATION_ID,
     CONF_TIDEWATER_STATION_NAME,
+    DKSS_FORECAST_SENSOR,
     DOMAIN,
     LAST_FETCH_SENSOR,
     SEA_SENSOR_TYPES,
@@ -54,7 +55,7 @@ async def async_setup_entry(
     observations = coordinator.data.get("observations", {}) if coordinator.data else {}
     coordinator.known_sensor_keys = set(observations.keys())
 
-    entities: list[DMISensor | DMITidewaterSensor | DMILastFetchSensor] = [
+    entities: list[DMISensor | DMITidewaterSensor | DMIDKSSForecastSensor | DMILastFetchSensor] = [
         DMILastFetchSensor(
             coordinator=coordinator,
             config_entry=config_entry,
@@ -78,6 +79,18 @@ async def async_setup_entry(
                 entity_description=description,
             )
             for description in TIDEWATER_SENSOR_TYPES
+        )
+
+    if (
+        coordinator.setup_type == SETUP_TYPE_SEA
+        and coordinator.latitude is not None
+        and coordinator.longitude is not None
+    ):
+        entities.append(
+            DMIDKSSForecastSensor(
+                coordinator=coordinator,
+                config_entry=config_entry,
+            )
         )
 
     async_add_entities(entities, True)
@@ -346,6 +359,80 @@ class DMITidewaterSensor(DMIBaseSensor):
             if isinstance(last_updated, datetime):
                 attributes["last_updated"] = last_updated.isoformat()
 
+        return {key: value for key, value in attributes.items() if value is not None}
+
+
+class DMIDKSSForecastSensor(DMIBaseSensor):
+    """Representation of a weather-driven DKSS sea-level forecast."""
+
+    entity_description = DKSS_FORECAST_SENSOR
+
+    def __init__(
+        self,
+        coordinator: DMIDataUpdateCoordinator,
+        config_entry: ConfigEntry,
+    ) -> None:
+        """Initialize the DKSS forecast sensor."""
+        super().__init__(coordinator, config_entry)
+        self._attr_unique_id = f"{config_entry.entry_id}_{DKSS_FORECAST_SENSOR.key}"
+
+    @property
+    def _forecast_data(self) -> dict[str, Any]:
+        """Return normalized DKSS forecast data."""
+        if self.coordinator.data is None:
+            return {}
+        return self.coordinator.data.get("dkss_forecast") or {}
+
+    @property
+    def _forecast(self) -> list[dict[str, Any]]:
+        """Return the hourly DKSS series."""
+        return self._forecast_data.get("forecast") or []
+
+    @property
+    def native_value(self) -> Any:
+        """Return the next available DKSS sea-level forecast."""
+        if not self._forecast:
+            return None
+        return self._forecast[0].get("value")
+
+    @staticmethod
+    def _extreme(
+        forecast: list[dict[str, Any]],
+        *,
+        highest: bool,
+    ) -> dict[str, Any] | None:
+        """Return the highest or lowest prediction in the series."""
+        valid = [item for item in forecast if item.get("value") is not None]
+        if not valid:
+            return None
+        prediction = (max if highest else min)(
+            valid,
+            key=lambda item: item["value"],
+        )
+        return {
+            "datetime": prediction.get("datetime"),
+            "value": prediction.get("value"),
+        }
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the model location, range, and full hourly forecast."""
+        attributes: dict[str, Any] = {
+            "forecast_type": "weather-driven storm-surge model",
+            "reference": "deviation from mean sea level",
+            "model_collection": self._forecast_data.get("collection_id"),
+            "model_latitude": self._forecast_data.get("model_latitude"),
+            "model_longitude": self._forecast_data.get("model_longitude"),
+            "forecast": self._forecast,
+            "forecast_high": self._extreme(self._forecast, highest=True),
+            "forecast_low": self._extreme(self._forecast, highest=False),
+        }
+        if self._forecast:
+            attributes["forecast_time"] = self._forecast[0].get("datetime")
+        if self.coordinator.data is not None:
+            last_updated = self.coordinator.data.get("last_updated")
+            if isinstance(last_updated, datetime):
+                attributes["last_updated"] = last_updated.isoformat()
         return {key: value for key, value in attributes.items() if value is not None}
 
 

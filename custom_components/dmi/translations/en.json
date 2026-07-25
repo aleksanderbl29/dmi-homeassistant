@@ -136,6 +136,7 @@
       "predicted_sea_level": { "name": "Predicted Sea Level" },
       "next_high_tide": { "name": "Next High Tide" },
       "next_low_tide": { "name": "Next Low Tide" },
+      "dkss_forecast_sea_level": { "name": "DKSS Forecast Sea Level" },
       "last_fetch": { "name": "Last Successful Update" }
     }
   }

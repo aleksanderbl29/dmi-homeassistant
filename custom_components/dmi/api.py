@@ -483,7 +483,7 @@ class DMIApiClient:
                 {
                     "datetime": forecast_time,
                     # DKSS sea-mean-deviation is metres; sea sensors use centimetres.
-                    "value": float(values[value_index]) * 100,
+                    "value": round(float(values[value_index]) * 100, 2),
                 }
             )
 

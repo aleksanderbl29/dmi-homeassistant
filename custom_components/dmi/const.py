@@ -389,6 +389,14 @@ TIDEWATER_SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
     ),
 )
 
+DKSS_FORECAST_SENSOR = _sensor(
+    "dkss_forecast_sea_level",
+    "DKSS Forecast Sea Level",
+    native_unit_of_measurement="cm",
+    device_class=SensorDeviceClass.DISTANCE,
+    icon="mdi:waves-arrow-right",
+)
+
 LAST_FETCH_SENSOR = SensorEntityDescription(
     key="last_fetch",
     name="Last Successful Update",

@@ -23,6 +23,7 @@ from custom_components.dmi.const import (
     CONF_STATION_NAME,
     CONF_TIDEWATER_STATION_ID,
     CONF_TIDEWATER_STATION_NAME,
+    DKSS_FORECAST_SENSOR,
     DOMAIN,
     LAST_FETCH_SENSOR,
     SEA_SENSOR_TYPES,
@@ -30,7 +31,12 @@ from custom_components.dmi.const import (
     TIDEWATER_SENSOR_TYPES,
 )
 from custom_components.dmi.coordinator import DMIDataUpdateCoordinator
-from custom_components.dmi.sensor import DMILastFetchSensor, DMISensor, DMITidewaterSensor
+from custom_components.dmi.sensor import (
+    DMIDKSSForecastSensor,
+    DMILastFetchSensor,
+    DMISensor,
+    DMITidewaterSensor,
+)
 
 
 class TestDMISensor:
@@ -279,6 +285,52 @@ class TestDMITidewaterSensor:
         assert sensor.extra_state_attributes[CONF_LOW_ASTRONOMICAL_TIDE] == -23.8
 
 
+class TestDMIDKSSForecastSensor:
+    """Test the weather-driven sea-level forecast sensor."""
+
+    def test_dkss_sensor_exposes_hourly_range_and_extremes(self) -> None:
+        """Test DKSS state and forecast metadata."""
+        coordinator = MagicMock(spec=DMIDataUpdateCoordinator)
+        coordinator.data = {
+            "dkss_forecast": {
+                "collection_id": "dkss_idw",
+                "model_latitude": 55.329,
+                "model_longitude": 11.146,
+                "forecast": [
+                    {"datetime": "2026-07-25T10:00:00Z", "value": 12.3},
+                    {"datetime": "2026-07-25T11:00:00Z", "value": 18.4},
+                    {"datetime": "2026-07-25T12:00:00Z", "value": 8.2},
+                ],
+            },
+            "last_updated": datetime(2026, 7, 25, 9, 35, tzinfo=UTC),
+        }
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Korsør",
+            data={
+                "setup_type": "sea",
+                CONF_STATION_ID: "30017",
+                CONF_STATION_NAME: "Korsør",
+            },
+        )
+
+        sensor = DMIDKSSForecastSensor(coordinator, entry)
+
+        assert sensor.entity_description == DKSS_FORECAST_SENSOR
+        assert sensor.native_value == 12.3
+        assert sensor.extra_state_attributes["forecast_time"] == ("2026-07-25T10:00:00Z")
+        assert sensor.extra_state_attributes["forecast_high"] == {
+            "datetime": "2026-07-25T11:00:00Z",
+            "value": 18.4,
+        }
+        assert sensor.extra_state_attributes["forecast_low"] == {
+            "datetime": "2026-07-25T12:00:00Z",
+            "value": 8.2,
+        }
+        assert sensor.extra_state_attributes["model_collection"] == "dkss_idw"
+        assert sensor.extra_state_attributes["reference"] == ("deviation from mean sea level")
+
+
 class TestSensorTypes:
     """Test cases for SENSOR_TYPES definitions."""
 
@@ -471,6 +523,17 @@ class TestDMISensorIntegration:
                 },
             ]
         )
+        mock_dmi_api.get_dkss_forecast = AsyncMock(
+            return_value={
+                "collection_id": "dkss_idw",
+                "model_latitude": 55.329,
+                "model_longitude": 11.146,
+                "forecast": [
+                    {"datetime": "2026-07-25T10:00:00Z", "value": 12.3},
+                    {"datetime": "2026-07-25T11:00:00Z", "value": 18.4},
+                ],
+            }
+        )
         entry.add_to_hass(hass)
 
         await hass.config_entries.async_setup(entry.entry_id)
@@ -481,6 +544,7 @@ class TestDMISensorIntegration:
         predicted_level = hass.states.get("sensor.korsor_predicted_sea_level")
         next_high = hass.states.get("sensor.korsor_next_high_tide")
         next_low = hass.states.get("sensor.korsor_next_low_tide")
+        dkss = hass.states.get("sensor.korsor_dkss_forecast_sea_level")
         assert sea_level is not None
         assert sea_level.state == "26.0"
         assert sea_level.attributes["quality_control_status"] == "auto"
@@ -494,6 +558,10 @@ class TestDMISensorIntegration:
         assert next_high.attributes["prediction_time"] == "2026-07-25T09:47:00Z"
         assert next_low is not None
         assert next_low.state == "-14.1"
+        assert dkss is not None
+        assert dkss.state == "12.3"
+        assert dkss.attributes["model_collection"] == "dkss_idw"
+        assert dkss.attributes["forecast_high"]["value"] == 18.4
         assert hass.states.get("weather.korsor") is None
         mock_dmi_api.get_observations.assert_not_called()
         mock_dmi_api.get_forecast.assert_not_called()

@@ -51,6 +51,7 @@ RATE_LIMIT_COOLDOWN = timedelta(minutes=1)
 # back-to-back even though they're both well within normal limits.
 REQUEST_STAGGER_SECONDS = 2
 TIDEWATER_FORECAST_HOURS = 24
+DKSS_FORECAST_HOURS = 120
 
 
 class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -151,7 +152,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed("Still in rate-limit cooldown and no cached data yet")
 
         try:
-            async with asyncio.timeout(30):
+            async with asyncio.timeout(60):
                 _LOGGER.debug(
                     "Updating DMI data for station %s (forecast enabled=%s, coords=%s,%s)",
                     self.station_id,
@@ -192,6 +193,30 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             err,
                         )
 
+                dkss_forecast: dict[str, Any] | None = None
+                if (
+                    self.setup_type == SETUP_TYPE_SEA
+                    and self.latitude is not None
+                    and self.longitude is not None
+                ):
+                    await asyncio.sleep(REQUEST_STAGGER_SECONDS)
+                    try:
+                        dkss_forecast = await self.api.get_dkss_forecast(
+                            self.latitude,
+                            self.longitude,
+                            now,
+                            now + timedelta(hours=DKSS_FORECAST_HOURS),
+                        )
+                    except RateLimitExceeded:
+                        raise
+                    except (CannotConnect, RequestTimeout, UpstreamError, TimeoutError) as err:
+                        _LOGGER.warning(
+                            "Failed to fetch DKSS forecast at %s,%s: %s",
+                            self.latitude,
+                            self.longitude,
+                            err,
+                        )
+
                 # Fetch forecast if coordinates are available and enabled.
                 # Stagger this slightly after the observations call so the
                 # two requests in this cycle are never sent back-to-back.
@@ -226,6 +251,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "observations": observations,
                     "forecast": forecast,
                     "tidewater_forecast": tidewater_forecast,
+                    "dkss_forecast": dkss_forecast,
                     "last_updated": now,
                 }
 
