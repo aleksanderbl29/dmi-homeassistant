@@ -17,7 +17,6 @@ _LOGGER = logging.getLogger(__name__)
 AUTH_PARAM_NAMES = frozenset({"api-key", "apikey", "token"})
 PAGE_SIZE = 1000
 OBSERVATION_PAGE_SIZE = 100
-DKSS_SEARCH_RADIUS = 0.05
 
 
 class CannotConnect(Exception):
@@ -117,7 +116,12 @@ class DMIApiClient:
                 url, params=params, timeout=aiohttp.ClientTimeout(total=30)
             ) as response:
                 if response.status == 429:
-                    raise RateLimitExceeded("DMI API rate limit exceeded")
+                    response_text = await response.text()
+                    detail = self._truncate_error_text(response_text)
+                    raise RateLimitExceeded(
+                        "DMI API returned HTTP 429"
+                        + (f": {detail}" if detail else " (too many requests or server busy)")
+                    )
                 if response.status >= 400:
                     response_text = await response.text()
                     truncated_text = self._truncate_error_text(response_text)
@@ -162,8 +166,8 @@ class DMIApiClient:
         except RequestTimeout:
             raise
         except TimeoutError as err:
-            _LOGGER.error("API timeout: %s", err)
-            raise RequestTimeout(f"Request timeout: {err}") from err
+            _LOGGER.error("DMI API request exceeded the 30-second timeout")
+            raise RequestTimeout("DMI API request exceeded the 30-second timeout") from err
 
     def _merge_station_feature(
         self,
@@ -508,18 +512,15 @@ class DMIApiClient:
         collection_ids = [preferred_collection]
         if preferred_collection != "dkss_nsbs":
             collection_ids.append("dkss_nsbs")
-        radius = DKSS_SEARCH_RADIUS
         params = {
-            "bbox": (
-                f"{longitude - radius},{latitude - radius},{longitude + radius},{latitude + radius}"
-            ),
+            "coords": f"POINT({longitude} {latitude})",
             "crs": "crs84",
             "parameter-name": "sea-mean-deviation",
             "datetime": f"{self._rfc3339(start)}/{self._rfc3339(end)}",
             "f": "CoverageJSON",
         }
         for collection_id in collection_ids:
-            url = f"{FORECAST_URL}/collections/{collection_id}/cube"
+            url = f"{FORECAST_URL}/collections/{collection_id}/position"
             data = await self._request(url, params)
             parsed = self._parse_dkss_coverage(
                 data,

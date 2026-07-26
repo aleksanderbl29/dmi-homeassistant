@@ -558,7 +558,7 @@ class TestDMIApiClient:
         """Test DKSS collection selection prefers nested high-resolution areas."""
         assert DMIApiClient._dkss_collection_for_position(latitude, longitude) == expected
 
-    async def test_get_dkss_forecast_selects_nearest_wet_grid_cell(
+    async def test_get_dkss_forecast_parses_returned_grid_cell(
         self,
         api_client: DMIApiClient,
     ) -> None:
@@ -608,7 +608,9 @@ class TestDMIApiClient:
             ],
         }
         request_url, request_params = api_client._request.await_args.args
-        assert request_url == f"{FORECAST_URL}/collections/dkss_idw/cube"
+        assert request_url == f"{FORECAST_URL}/collections/dkss_idw/position"
+        assert request_params["coords"] == "POINT(11.11 55.31)"
+        assert "bbox" not in request_params
         assert request_params["parameter-name"] == "sea-mean-deviation"
         assert request_params["datetime"] == ("2026-07-25T10:00:00Z/2026-07-30T10:00:00Z")
 
@@ -646,8 +648,8 @@ class TestDMIApiClient:
         assert forecast is not None
         assert forecast["collection_id"] == "dkss_nsbs"
         assert [call.args[0] for call in api_client._request.await_args_list] == [
-            f"{FORECAST_URL}/collections/dkss_idw/cube",
-            f"{FORECAST_URL}/collections/dkss_nsbs/cube",
+            f"{FORECAST_URL}/collections/dkss_idw/position",
+            f"{FORECAST_URL}/collections/dkss_nsbs/position",
         ]
 
     def test_dkss_helpers_handle_sparse_axes_and_forecasts(self) -> None:
@@ -697,7 +699,7 @@ class TestDMIApiClient:
         assert forecast is None
         api_client._request.assert_awaited_once()
         assert api_client._request.await_args.args[0] == (
-            f"{FORECAST_URL}/collections/dkss_nsbs/cube"
+            f"{FORECAST_URL}/collections/dkss_nsbs/position"
         )
 
     async def test_get_observations_success(
@@ -1060,12 +1062,13 @@ class TestDMIApiClient:
         """Test rate limit error handling."""
         mock_response = AsyncMock()
         mock_response.status = 429
+        mock_response.text = AsyncMock(return_value='{"message":"Server is busy"}')
 
         mock_context = AsyncMock()
         mock_context.__aenter__.return_value = mock_response
         api_client._session.get = MagicMock(return_value=mock_context)
 
-        with pytest.raises(RateLimitExceeded):
+        with pytest.raises(RateLimitExceeded, match="Server is busy"):
             await api_client.get_stations()
 
     async def test_http_error_status_includes_response_body(
