@@ -3,10 +3,36 @@
     "step": {
       "user": {
         "title": "DMI Weather Setup",
-        "description": "Normal station setup is recommended for most users. Use advanced composite setup only to enrich a primary station with backup-only sensors from one or more other stations.",
+        "description": "Choose a normal or advanced weather setup, or add a sea-level tide gauge.",
         "menu_options": {
           "station": "Normal station setup",
-          "advanced_primary": "Advanced composite setup"
+          "advanced_primary": "Advanced composite setup",
+          "sea": "Sea-level station setup"
+        }
+      },
+      "sea": {
+        "title": "DMI Sea Level Setup",
+        "description": "Choose a tide-gauge station. All available sea-level reference measurements and water temperature will be added as sensors.",
+        "data": {
+          "station_id": "Sea-level station"
+        }
+      },
+      "tidewater_station": {
+        "title": "Tide Prediction Source",
+        "description": "Astronomical tide predictions will come from {prediction_station_name} ({prediction_station_id}), {distance} km from the observation station.",
+        "menu_options": {
+          "tidewater_accept": "Use this prediction station",
+          "tidewater_change": "Choose another prediction station"
+        }
+      },
+      "tidewater_accept": {
+        "title": "Tide Prediction Source"
+      },
+      "tidewater_change": {
+        "title": "Choose Tide Prediction Station",
+        "description": "Select a different DMI station for astronomical tide predictions.",
+        "data": {
+          "tidewater_station_id": "Prediction station"
         }
       },
       "station": {
@@ -114,6 +140,14 @@
       "radia_glob_past1h": { "name": "Solar Radiation Last Hour" },
       "sun_last10min_glob": { "name": "Sunshine Last 10 Minutes" },
       "sun_last1h_glob": { "name": "Sunshine Last Hour" },
+      "sealev_dvr": { "name": "Sea Level DVR90" },
+      "sealev_ln": { "name": "Sea Level Local Reference" },
+      "sea_reg": { "name": "Sea Level Registration" },
+      "tw": { "name": "Water Temperature" },
+      "predicted_sea_level": { "name": "Predicted Sea Level" },
+      "next_high_tide": { "name": "Next High Tide" },
+      "next_low_tide": { "name": "Next Low Tide" },
+      "dkss_forecast_sea_level": { "name": "DKSS Forecast Sea Level" },
       "last_fetch": { "name": "Last Successful Update" }
     }
   }

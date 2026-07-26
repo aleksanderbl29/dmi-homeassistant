@@ -3,10 +3,36 @@
     "step": {
       "user": {
         "title": "Opsætning af DMI Vejr",
-        "description": "Normal stationsopsætning anbefales til de fleste brugere. Brug kun avanceret sammensat opsætning, hvis du vil berige en primær station med backup-sensorer fra en eller flere andre stationer.",
+        "description": "Vælg en normal eller avanceret vejropsætning, eller tilføj en vandstandsmåler.",
         "menu_options": {
           "station": "Normal stationsopsætning",
-          "advanced_primary": "Avanceret sammensat opsætning"
+          "advanced_primary": "Avanceret sammensat opsætning",
+          "sea": "Opsætning af vandstandsstation"
+        }
+      },
+      "sea": {
+        "title": "Opsætning af DMI Vandstand",
+        "description": "Vælg en vandstandsstation. Alle tilgængelige vandstandsmålinger og vandtemperatur tilføjes som sensorer.",
+        "data": {
+          "station_id": "Vandstandsstation"
+        }
+      },
+      "tidewater_station": {
+        "title": "Kilde til tidevandsprognose",
+        "description": "Astronomiske tidevandsprognoser hentes fra {prediction_station_name} ({prediction_station_id}), {distance} km fra observationsstationen.",
+        "menu_options": {
+          "tidewater_accept": "Brug denne prognosestation",
+          "tidewater_change": "Vælg en anden prognosestation"
+        }
+      },
+      "tidewater_accept": {
+        "title": "Kilde til tidevandsprognose"
+      },
+      "tidewater_change": {
+        "title": "Vælg tidevandsprognosestation",
+        "description": "Vælg en anden DMI-station til astronomiske tidevandsprognoser.",
+        "data": {
+          "tidewater_station_id": "Prognosestation"
         }
       },
       "station": {
@@ -114,6 +140,14 @@
       "radia_glob_past1h": { "name": "Solindstråling seneste time" },
       "sun_last10min_glob": { "name": "Solskin seneste 10 minutter" },
       "sun_last1h_glob": { "name": "Solskin seneste time" },
+      "sealev_dvr": { "name": "Vandstand DVR90" },
+      "sealev_ln": { "name": "Vandstand lokal reference" },
+      "sea_reg": { "name": "Vandstandsregistrering" },
+      "tw": { "name": "Vandtemperatur" },
+      "predicted_sea_level": { "name": "Forudsagt vandstand" },
+      "next_high_tide": { "name": "Næste højvande" },
+      "next_low_tide": { "name": "Næste lavvande" },
+      "dkss_forecast_sea_level": { "name": "DKSS-prognose for vandstand" },
       "last_fetch": { "name": "Seneste vellykkede opdatering" }
     }
   }

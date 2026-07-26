@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import pytest
@@ -17,7 +18,7 @@ from custom_components.dmi.api import (
     RequestTimeout,
     UpstreamError,
 )
-from custom_components.dmi.const import BASE_URL, FORECAST_URL, METOBS_URL
+from custom_components.dmi.const import BASE_URL, FORECAST_URL, METOBS_URL, OCEANOBS_URL
 
 
 class TestDMIApiClient:
@@ -53,6 +54,7 @@ class TestDMIApiClient:
         assert stations[0]["name"] == "Københavns Lufthavn"
         assert stations[0]["latitude"] == 55.614
         assert stations[0]["longitude"] == 12.6455
+        assert stations[0]["validTo"] == "2019-01-15T13:34:48Z"
 
     async def test_get_stations_empty_response(
         self,
@@ -71,6 +73,122 @@ class TestDMIApiClient:
         stations = await api_client.get_stations()
 
         assert stations == []
+
+    async def test_get_sea_stations_uses_oceanobs_endpoint(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test tide-gauge discovery uses the oceanObs station collection."""
+        api_client._request = AsyncMock(return_value={"features": []})
+
+        stations = await api_client.get_sea_stations()
+
+        assert stations == []
+        api_client._request.assert_awaited_once_with(
+            f"{OCEANOBS_URL}/collections/station/items",
+            {"limit": 1000, "offset": 0, "status": "Active"},
+        )
+
+    async def test_get_sea_stations_exposes_validity_for_current_station_filtering(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test station validity is retained so ended gauges can be hidden."""
+        api_client._request = AsyncMock(
+            return_value={
+                "features": [
+                    {
+                        "properties": {
+                            "stationId": "20002",
+                            "name": "Old Gauge",
+                            "parameterId": ["sealev_dvr"],
+                            "validTo": "2021-01-06T00:00:00Z",
+                        },
+                        "geometry": {"coordinates": [10.59, 57.71]},
+                    }
+                ]
+            }
+        )
+
+        stations = await api_client.get_sea_stations()
+
+        assert stations[0]["validTo"] == "2021-01-06T00:00:00Z"
+
+    async def test_get_tidewater_stations_parses_prediction_metadata(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test astronomical prediction stations retain reference metadata."""
+        api_client._request = AsyncMock(
+            return_value={
+                "features": [
+                    {
+                        "geometry": {"coordinates": [11.1422, 55.3306]},
+                        "properties": {
+                            "stationId": "29393",
+                            "name": "Korsør",
+                            "country": "DNK",
+                            "lowAstronomicalTide": -23.8,
+                            "meanLowWaterSpring": -15.0,
+                        },
+                    }
+                ]
+            }
+        )
+
+        stations = await api_client.get_tidewater_stations()
+
+        assert stations == [
+            {
+                "stationId": "29393",
+                "name": "Korsør",
+                "country": "DNK",
+                "longitude": 11.1422,
+                "latitude": 55.3306,
+                "lowAstronomicalTide": -23.8,
+                "meanLowWaterSpring": -15.0,
+            }
+        ]
+        api_client._request.assert_awaited_once_with(
+            f"{OCEANOBS_URL}/collections/tidewaterstation/items",
+            {"limit": 1000, "offset": 0},
+        )
+
+    async def test_get_tidewater_stations_skips_invalid_and_paginates(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test invalid prediction stations are skipped across catalog pages."""
+        api_client._request = AsyncMock(
+            side_effect=[
+                {"features": [{"properties": {}, "geometry": {}}]},
+                {
+                    "features": [
+                        {
+                            "properties": {"stationId": "29393"},
+                            "geometry": {"coordinates": []},
+                        }
+                    ]
+                },
+                {"features": []},
+            ]
+        )
+
+        with patch("custom_components.dmi.api.PAGE_SIZE", 1):
+            stations = await api_client.get_tidewater_stations()
+
+        assert stations == [
+            {
+                "stationId": "29393",
+                "name": None,
+                "country": None,
+                "longitude": None,
+                "latitude": None,
+                "lowAstronomicalTide": None,
+                "meanLowWaterSpring": None,
+            }
+        ]
+        assert api_client._request.await_count == 3
 
     async def test_get_stations_filters_invalid(
         self,
@@ -280,6 +398,309 @@ class TestDMIApiClient:
         assert station_06180["parameterId"] == ["temp_dry", "humidity"]
 
     # --- get_observations tests ---
+
+    async def test_get_sea_observations_preserves_quality_metadata(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test sea observations include the newest values and QC metadata."""
+        api_client._request = AsyncMock(
+            return_value={
+                "features": [
+                    {
+                        "properties": {
+                            "parameterId": "sealev_dvr",
+                            "value": 26.0,
+                            "observed": "2026-07-24T15:40:00Z",
+                            "created": "2026-07-24T15:41:44Z",
+                            "qcStatus": "auto",
+                        }
+                    },
+                    {
+                        "properties": {
+                            "parameterId": "sealev_dvr",
+                            "value": 25.0,
+                            "observed": "2026-07-24T15:30:00Z",
+                            "qcStatus": "manual",
+                        }
+                    },
+                    {
+                        "properties": {
+                            "parameterId": "tw",
+                            "value": 18.2,
+                            "observed": "2026-07-24T15:40:00Z",
+                            "qcStatus": "auto",
+                        }
+                    },
+                ]
+            }
+        )
+
+        observations = await api_client.get_sea_observations("30017")
+
+        assert observations == {
+            "sealev_dvr": {
+                "value": 26.0,
+                "observed": "2026-07-24T15:40:00Z",
+                "created": "2026-07-24T15:41:44Z",
+                "qc_status": "auto",
+            },
+            "tw": {
+                "value": 18.2,
+                "observed": "2026-07-24T15:40:00Z",
+                "qc_status": "auto",
+            },
+        }
+        api_client._request.assert_awaited_once_with(
+            f"{OCEANOBS_URL}/collections/observation/items",
+            {
+                "stationId": "30017",
+                "limit": 100,
+                "offset": 0,
+                "sortorder": "observed,DESC",
+            },
+        )
+
+    async def test_get_tidewater_forecast_returns_sorted_prediction_types(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test tide predictions are normalized and sorted by prediction time."""
+        api_client._request = AsyncMock(
+            return_value={
+                "features": [
+                    {
+                        "properties": {
+                            "predictionType": "maximum",
+                            "predictionTime": "2026-07-25T09:47:00Z",
+                            "created": "2026-03-23T09:30:10Z",
+                            "value": 16.2,
+                            "stationId": "29393",
+                        }
+                    },
+                    {
+                        "properties": {
+                            "predictionType": "10minutes",
+                            "predictionTime": "2026-07-25T09:40:00Z",
+                            "created": "2026-03-23T10:18:26Z",
+                            "value": 16.1,
+                            "stationId": "29393",
+                        }
+                    },
+                ]
+            }
+        )
+        start = datetime(2026, 7, 25, 9, 30, tzinfo=UTC)
+        end = datetime(2026, 7, 26, 9, 30, tzinfo=UTC)
+
+        predictions = await api_client.get_tidewater_forecast("29393", start, end)
+
+        assert [prediction["prediction_type"] for prediction in predictions] == [
+            "10minutes",
+            "maximum",
+        ]
+        assert predictions[0] == {
+            "value": 16.1,
+            "prediction_time": "2026-07-25T09:40:00Z",
+            "prediction_type": "10minutes",
+            "created": "2026-03-23T10:18:26Z",
+            "station_id": "29393",
+        }
+        api_client._request.assert_awaited_once_with(
+            f"{OCEANOBS_URL}/collections/tidewater/items",
+            {
+                "stationId": "29393",
+                "datetime": "2026-07-25T09:30:00Z/2026-07-26T09:30:00Z",
+                "limit": 500,
+                "offset": 0,
+            },
+        )
+
+    async def test_tidewater_forecast_skips_incomplete_predictions(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test incomplete tide predictions are ignored."""
+        api_client._request = AsyncMock(
+            return_value={
+                "features": [
+                    {"properties": {"predictionTime": "2026-07-25T09:40:00Z"}},
+                ]
+            }
+        )
+        start = datetime(2026, 7, 25, 9, 30)
+        end = datetime(2026, 7, 26, 9, 30)
+
+        predictions = await api_client.get_tidewater_forecast("29393", start, end)
+
+        assert predictions == []
+        assert api_client._request.await_args.args[1]["datetime"] == (
+            "2026-07-25T09:30:00Z/2026-07-26T09:30:00Z"
+        )
+
+    @pytest.mark.parametrize(
+        ("latitude", "longitude", "expected"),
+        [
+            (55.8, 11.9, "dkss_if"),
+            (55.4, 9.8, "dkss_lb"),
+            (56.8, 9.5, "dkss_lf"),
+            (55.0, 8.5, "dkss_ws"),
+            (55.33, 11.14, "dkss_idw"),
+            (58.0, 10.0, "dkss_nsbs"),
+        ],
+    )
+    def test_dkss_collection_selects_most_detailed_model(
+        self,
+        latitude: float,
+        longitude: float,
+        expected: str,
+    ) -> None:
+        """Test DKSS collection selection prefers nested high-resolution areas."""
+        assert DMIApiClient._dkss_collection_for_position(latitude, longitude) == expected
+
+    async def test_get_dkss_forecast_parses_returned_grid_cell(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test a nearby water cell is used when the gauge's closest cell is land."""
+        api_client._request = AsyncMock(
+            return_value={
+                "domain": {
+                    "axes": {
+                        "t": {
+                            "values": [
+                                "2026-07-25T10:00:00Z",
+                                "2026-07-25T11:00:00Z",
+                            ]
+                        },
+                        "x": {"start": 11.1, "stop": 11.2, "num": 2},
+                        "y": {"values": [55.3, 55.4]},
+                    }
+                },
+                "ranges": {
+                    "sea-mean-deviation": {
+                        "values": [
+                            None,
+                            0.12,
+                            0.2,
+                            0.3,
+                            None,
+                            0.13,
+                            0.21,
+                            0.31,
+                        ]
+                    }
+                },
+            }
+        )
+        start = datetime(2026, 7, 25, 10, tzinfo=UTC)
+        end = datetime(2026, 7, 30, 10, tzinfo=UTC)
+
+        forecast = await api_client.get_dkss_forecast(55.31, 11.11, start, end)
+
+        assert forecast == {
+            "collection_id": "dkss_idw",
+            "model_latitude": 55.3,
+            "model_longitude": 11.2,
+            "forecast": [
+                {"datetime": "2026-07-25T10:00:00Z", "value": 12.0},
+                {"datetime": "2026-07-25T11:00:00Z", "value": 13.0},
+            ],
+        }
+        request_url, request_params = api_client._request.await_args.args
+        assert request_url == f"{FORECAST_URL}/collections/dkss_idw/position"
+        assert request_params["coords"] == "POINT(11.11 55.31)"
+        assert "bbox" not in request_params
+        assert request_params["parameter-name"] == "sea-mean-deviation"
+        assert request_params["datetime"] == ("2026-07-25T10:00:00Z/2026-07-30T10:00:00Z")
+
+    async def test_get_dkss_forecast_falls_back_to_broad_model(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test an all-land regional result falls back to dkss_nsbs."""
+        empty_coverage = {
+            "domain": {
+                "axes": {
+                    "t": {"values": ["2026-07-25T10:00:00Z"]},
+                    "x": {"values": [11.1]},
+                    "y": {"values": [55.3]},
+                }
+            },
+            "ranges": {"sea-mean-deviation": {"values": [None]}},
+        }
+        wet_coverage = {
+            "domain": {
+                "axes": {
+                    "t": {"values": ["2026-07-25T10:00:00Z"]},
+                    "x": {"values": [11.1]},
+                    "y": {"values": [55.3]},
+                }
+            },
+            "ranges": {"sea-mean-deviation": {"values": [0.1]}},
+        }
+        api_client._request = AsyncMock(side_effect=[empty_coverage, wet_coverage])
+        start = datetime(2026, 7, 25, 10, tzinfo=UTC)
+        end = datetime(2026, 7, 30, 10, tzinfo=UTC)
+
+        forecast = await api_client.get_dkss_forecast(55.31, 11.11, start, end)
+
+        assert forecast is not None
+        assert forecast["collection_id"] == "dkss_nsbs"
+        assert [call.args[0] for call in api_client._request.await_args_list] == [
+            f"{FORECAST_URL}/collections/dkss_idw/position",
+            f"{FORECAST_URL}/collections/dkss_nsbs/position",
+        ]
+
+    def test_dkss_helpers_handle_sparse_axes_and_forecasts(self) -> None:
+        """Test DKSS parsing handles missing axes and intermittent values."""
+        assert DMIApiClient._axis_values({}) == []
+        assert DMIApiClient._axis_values({"start": 11.1, "num": 1}) == [11.1]
+        assert (
+            DMIApiClient._parse_dkss_coverage(
+                {},
+                latitude=55.3,
+                longitude=11.1,
+                collection_id="dkss_idw",
+            )
+            is None
+        )
+
+        forecast = DMIApiClient._parse_dkss_coverage(
+            {
+                "domain": {
+                    "axes": {
+                        "t": {"values": ["2026-07-25T10:00:00Z", "2026-07-25T11:00:00Z"]},
+                        "x": {"values": [11.1]},
+                        "y": {"values": [55.3]},
+                    }
+                },
+                "ranges": {"sea-mean-deviation": {"values": [0.1, None]}},
+            },
+            latitude=55.3,
+            longitude=11.1,
+            collection_id="dkss_idw",
+        )
+
+        assert forecast is not None
+        assert forecast["forecast"] == [{"datetime": "2026-07-25T10:00:00Z", "value": 10.0}]
+
+    async def test_get_dkss_forecast_outside_model_returns_none(
+        self,
+        api_client: DMIApiClient,
+    ) -> None:
+        """Test positions outside regional models use one broad-model request."""
+        api_client._request = AsyncMock(return_value={})
+        start = datetime(2026, 7, 25, 10, tzinfo=UTC)
+        end = datetime(2026, 7, 30, 10, tzinfo=UTC)
+
+        forecast = await api_client.get_dkss_forecast(70.0, 35.0, start, end)
+
+        assert forecast is None
+        api_client._request.assert_awaited_once()
+        assert api_client._request.await_args.args[0] == (
+            f"{FORECAST_URL}/collections/dkss_nsbs/position"
+        )
 
     async def test_get_observations_success(
         self,
@@ -641,12 +1062,13 @@ class TestDMIApiClient:
         """Test rate limit error handling."""
         mock_response = AsyncMock()
         mock_response.status = 429
+        mock_response.text = AsyncMock(return_value='{"message":"Server is busy"}')
 
         mock_context = AsyncMock()
         mock_context.__aenter__.return_value = mock_response
         api_client._session.get = MagicMock(return_value=mock_context)
 
-        with pytest.raises(RateLimitExceeded):
+        with pytest.raises(RateLimitExceeded, match="Server is busy"):
             await api_client.get_stations()
 
     async def test_http_error_status_includes_response_body(

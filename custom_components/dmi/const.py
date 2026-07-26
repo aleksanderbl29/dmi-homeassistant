@@ -13,6 +13,7 @@ ATTRIBUTION = "Data provided by DMI Open Data"
 # API URLs
 BASE_URL = "https://opendataapi.dmi.dk"
 METOBS_URL = f"{BASE_URL}/v2/metObs"
+OCEANOBS_URL = f"{BASE_URL}/v2/oceanObs"
 FORECAST_URL = f"{BASE_URL}/v1/forecastedr"
 
 # Update interval in seconds (10 minutes)
@@ -34,9 +35,16 @@ CONF_BACKUP_STATION_NAME_SUFFIX = "backup_station_name_suffix"
 CONF_SOURCE_STATION_ID = "source_station_id"
 CONF_SOURCE_STATION_NAME = "source_station_name"
 CONF_SOURCE_TYPE = "source_type"
+CONF_TIDEWATER_STATION_ID = "tidewater_station_id"
+CONF_TIDEWATER_STATION_NAME = "tidewater_station_name"
+CONF_TIDEWATER_LATITUDE = "tidewater_latitude"
+CONF_TIDEWATER_LONGITUDE = "tidewater_longitude"
+CONF_LOW_ASTRONOMICAL_TIDE = "low_astronomical_tide"
+CONF_MEAN_LOW_WATER_SPRING = "mean_low_water_spring"
 
 SETUP_TYPE_NORMAL = "normal"
 SETUP_TYPE_ADVANCED = "advanced"
+SETUP_TYPE_SEA = "sea"
 SOURCE_TYPE_PRIMARY = "primary"
 SOURCE_TYPE_BACKUP = "backup"
 
@@ -321,6 +329,73 @@ SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
 SENSOR_TYPES_BY_KEY: dict[str, SensorEntityDescription] = {
     description.key: description for description in SENSOR_TYPES
 }
+
+SEA_SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
+    _sensor(
+        "sealev_dvr",
+        "Sea Level DVR90",
+        native_unit_of_measurement="cm",
+        device_class=SensorDeviceClass.DISTANCE,
+        icon="mdi:waves-arrow-up",
+    ),
+    _sensor(
+        "sealev_ln",
+        "Sea Level Local Reference",
+        native_unit_of_measurement="cm",
+        device_class=SensorDeviceClass.DISTANCE,
+        icon="mdi:waves-arrow-up",
+    ),
+    _sensor(
+        "sea_reg",
+        "Sea Level Registration",
+        native_unit_of_measurement="cm",
+        device_class=SensorDeviceClass.DISTANCE,
+        icon="mdi:waves-arrow-up",
+    ),
+    _sensor(
+        "tw",
+        "Water Temperature",
+        native_unit_of_measurement="°C",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        icon="mdi:thermometer-water",
+    ),
+)
+
+SEA_SENSOR_TYPES_BY_KEY: dict[str, SensorEntityDescription] = {
+    description.key: description for description in SEA_SENSOR_TYPES
+}
+
+TIDEWATER_SENSOR_TYPES: tuple[SensorEntityDescription, ...] = (
+    _sensor(
+        "predicted_sea_level",
+        "Predicted Sea Level",
+        native_unit_of_measurement="cm",
+        device_class=SensorDeviceClass.DISTANCE,
+        icon="mdi:waves-arrow-right",
+    ),
+    _sensor(
+        "next_high_tide",
+        "Next High Tide",
+        native_unit_of_measurement="cm",
+        device_class=SensorDeviceClass.DISTANCE,
+        icon="mdi:waves-arrow-up",
+    ),
+    _sensor(
+        "next_low_tide",
+        "Next Low Tide",
+        native_unit_of_measurement="cm",
+        device_class=SensorDeviceClass.DISTANCE,
+        icon="mdi:waves-arrow-down",
+    ),
+)
+
+DKSS_FORECAST_SENSOR = _sensor(
+    "dkss_forecast_sea_level",
+    "DKSS Forecast Sea Level",
+    native_unit_of_measurement="cm",
+    device_class=SensorDeviceClass.DISTANCE,
+    icon="mdi:waves-arrow-right",
+)
 
 LAST_FETCH_SENSOR = SensorEntityDescription(
     key="last_fetch",

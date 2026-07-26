@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 from collections.abc import Mapping
 from typing import Any
 
@@ -35,16 +36,24 @@ from .const import (
     CONF_INCLUDE_FORECAST,
     CONF_LATITUDE,
     CONF_LONGITUDE,
+    CONF_LOW_ASTRONOMICAL_TIDE,
+    CONF_MEAN_LOW_WATER_SPRING,
     CONF_SETUP_TYPE,
     CONF_STATION_ID,
     CONF_STATION_NAME,
+    CONF_TIDEWATER_LATITUDE,
+    CONF_TIDEWATER_LONGITUDE,
+    CONF_TIDEWATER_STATION_ID,
+    CONF_TIDEWATER_STATION_NAME,
     CONF_UPDATE_INTERVAL,
     CONF_USE_COORDINATES,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
+    SEA_SENSOR_TYPES_BY_KEY,
     SENSOR_TYPES_BY_KEY,
     SETUP_TYPE_ADVANCED,
     SETUP_TYPE_NORMAL,
+    SETUP_TYPE_SEA,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -58,6 +67,9 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         """Initialize the config flow."""
         self._stations: list[dict[str, Any]] = []
+        self._sea_stations: list[dict[str, Any]] = []
+        self._tidewater_stations: list[dict[str, Any]] = []
+        self._sea_primary: dict[str, Any] | None = None
         self._advanced_primary: dict[str, Any] | None = None
         self._advanced_backup_count = 1
         self._advanced_backups: list[dict[str, Any]] = []
@@ -68,8 +80,163 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle the initial step."""
         return self.async_show_menu(
             step_id="user",
-            menu_options=["station", "advanced_primary"],
+            menu_options=["station", "advanced_primary", "sea"],
         )
+
+    async def async_step_sea(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Handle tide-gauge station selection."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            station = self._get_station_by_id(
+                str(user_input.get(CONF_STATION_ID, "")),
+                stations=self._sea_stations,
+            )
+            if station is None:
+                errors["base"] = "invalid_station"
+            else:
+                station_id = str(station.get("stationId") or "")
+                station_name = str(station.get("name") or "DMI Sea Level")
+                self._sea_primary = {
+                    CONF_SETUP_TYPE: SETUP_TYPE_SEA,
+                    CONF_STATION_ID: station_id,
+                    CONF_STATION_NAME: station_name,
+                    CONF_LATITUDE: station.get("latitude"),
+                    CONF_LONGITUDE: station.get("longitude"),
+                    CONF_USE_COORDINATES: False,
+                }
+                return await self.async_step_tidewater_station()
+
+        if not await self._async_load_sea_stations():
+            return self.async_show_form(
+                step_id="sea",
+                data_schema=vol.Schema({}),
+                errors={"base": "cannot_connect"},
+            )
+
+        return self.async_show_form(
+            step_id="sea",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_STATION_ID): SelectSelector(
+                        SelectSelectorConfig(
+                            options=self._build_station_options(self._sea_stations),
+                            mode=SelectSelectorMode.LIST,
+                        )
+                    ),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_tidewater_station(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Confirm the automatically matched astronomical prediction station."""
+        if self._sea_primary is None:
+            return await self.async_step_sea()
+
+        if not await self._async_load_tidewater_stations():
+            return self.async_show_form(
+                step_id="tidewater_station",
+                data_schema=vol.Schema({}),
+                errors={"base": "cannot_connect"},
+            )
+
+        nearest = self._nearest_tidewater_station()
+        distance = self._tidewater_station_distance(nearest)
+        return self.async_show_menu(
+            step_id="tidewater_station",
+            menu_options=["tidewater_accept", "tidewater_change"],
+            description_placeholders={
+                "prediction_station_name": str(nearest.get("name") or nearest["stationId"]),
+                "prediction_station_id": str(nearest["stationId"]),
+                "distance": f"{distance:.1f}",
+            },
+        )
+
+    async def async_step_tidewater_accept(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Use the automatically matched astronomical prediction station."""
+        if self._sea_primary is None:
+            return await self.async_step_sea()
+        if not await self._async_load_tidewater_stations():
+            return self.async_show_form(
+                step_id="tidewater_accept",
+                data_schema=vol.Schema({}),
+                errors={"base": "cannot_connect"},
+            )
+        return await self._async_create_sea_entry(self._nearest_tidewater_station())
+
+    async def async_step_tidewater_change(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Allow explicit selection of a different prediction station."""
+        if self._sea_primary is None:
+            return await self.async_step_sea()
+
+        errors: dict[str, str] = {}
+        if not await self._async_load_tidewater_stations():
+            return self.async_show_form(
+                step_id="tidewater_change",
+                data_schema=vol.Schema({}),
+                errors={"base": "cannot_connect"},
+            )
+
+        if user_input is not None:
+            prediction_station = self._get_station_by_id(
+                str(user_input.get(CONF_TIDEWATER_STATION_ID, "")),
+                stations=self._tidewater_stations,
+            )
+            if prediction_station is None:
+                errors["base"] = "invalid_station"
+            else:
+                return await self._async_create_sea_entry(prediction_station)
+
+        nearest_station_id = self._nearest_tidewater_station_id()
+        return self.async_show_form(
+            step_id="tidewater_change",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_TIDEWATER_STATION_ID,
+                        default=nearest_station_id,
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=self._build_tidewater_station_options(),
+                            mode=SelectSelectorMode.LIST,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+        )
+
+    async def _async_create_sea_entry(
+        self,
+        prediction_station: Mapping[str, Any],
+    ) -> ConfigFlowResult:
+        """Create a sea entry with observation and prediction station data."""
+        if self._sea_primary is None:
+            return await self.async_step_sea()
+
+        station_id = str(self._sea_primary[CONF_STATION_ID])
+        station_name = str(self._sea_primary[CONF_STATION_NAME])
+        data = {
+            **self._sea_primary,
+            CONF_TIDEWATER_STATION_ID: str(prediction_station["stationId"]),
+            CONF_TIDEWATER_STATION_NAME: str(
+                prediction_station.get("name") or prediction_station["stationId"]
+            ),
+            CONF_TIDEWATER_LATITUDE: prediction_station.get("latitude"),
+            CONF_TIDEWATER_LONGITUDE: prediction_station.get("longitude"),
+            CONF_LOW_ASTRONOMICAL_TIDE: prediction_station.get("lowAstronomicalTide"),
+            CONF_MEAN_LOW_WATER_SPRING: prediction_station.get("meanLowWaterSpring"),
+        }
+        await self.async_set_unique_id(f"dmi_sea_{station_id}")
+        self._abort_if_unique_id_configured()
+        return self.async_create_entry(title=station_name, data=data)
 
     async def async_step_station(
         self, user_input: dict[str, Any] | None = None
@@ -401,17 +568,25 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_USE_COORDINATES: use_coordinates,
         }
 
-    def _get_station_by_id(self, station_id: str) -> dict[str, Any] | None:
+    def _get_station_by_id(
+        self,
+        station_id: str,
+        *,
+        stations: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any] | None:
         """Return a station by id."""
-        for station in self._stations:
+        for station in self._stations if stations is None else stations:
             if str(station.get("stationId", "")) == station_id:
                 return station
         return None
 
-    def _build_station_options(self) -> list[dict[str, str]]:
+    def _build_station_options(
+        self,
+        stations: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, str]]:
         """Build selector options for stations."""
         station_options_by_id: dict[str, dict[str, str]] = {}
-        for station in self._stations:
+        for station in self._stations if stations is None else stations:
             station_id = station.get("stationId")
             if not station_id:
                 continue
@@ -517,6 +692,121 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return bool(self._stations)
 
+    async def _async_load_sea_stations(self) -> bool:
+        """Load supported tide-gauge stations from the DMI oceanObs API."""
+        if self._sea_stations:
+            return True
+
+        try:
+            session = async_get_clientsession(self.hass)
+            api_client = DMIApiClient(session)
+            stations = await api_client.get_sea_stations(active_only=True)
+            self._sea_stations = [
+                station
+                for station in stations
+                if station.get("validTo") is None
+                and any(
+                    parameter_id in SEA_SENSOR_TYPES_BY_KEY
+                    for parameter_id in station.get("parameterId", [])
+                )
+            ]
+            _LOGGER.debug("Fetched %d supported tide-gauge stations", len(self._sea_stations))
+        except CannotConnect as err:
+            _LOGGER.error("Cannot connect to DMI oceanObs API: %s", err)
+            return False
+        except Exception as err:  # pragma: no cover - defensive path
+            _LOGGER.exception("Unexpected error fetching tide-gauge stations: %s", err)
+            return False
+
+        return bool(self._sea_stations)
+
+    async def _async_load_tidewater_stations(self) -> bool:
+        """Load astronomical prediction stations from DMI oceanObs."""
+        if self._tidewater_stations:
+            return True
+
+        try:
+            session = async_get_clientsession(self.hass)
+            api_client = DMIApiClient(session)
+            self._tidewater_stations = await api_client.get_tidewater_stations()
+            _LOGGER.debug(
+                "Fetched %d astronomical prediction stations",
+                len(self._tidewater_stations),
+            )
+        except CannotConnect as err:
+            _LOGGER.error("Cannot connect to DMI tidewater API: %s", err)
+            return False
+        except Exception as err:  # pragma: no cover - defensive path
+            _LOGGER.exception("Unexpected error fetching prediction stations: %s", err)
+            return False
+
+        return bool(self._tidewater_stations)
+
+    @staticmethod
+    def _distance_km(
+        latitude_a: float,
+        longitude_a: float,
+        latitude_b: float,
+        longitude_b: float,
+    ) -> float:
+        """Return the great-circle distance between two coordinates."""
+        lat_a = math.radians(latitude_a)
+        lat_b = math.radians(latitude_b)
+        lat_delta = lat_b - lat_a
+        lon_delta = math.radians(longitude_b - longitude_a)
+        haversine = (
+            math.sin(lat_delta / 2) ** 2
+            + math.cos(lat_a) * math.cos(lat_b) * math.sin(lon_delta / 2) ** 2
+        )
+        return 6371.0 * 2 * math.asin(math.sqrt(haversine))
+
+    def _tidewater_station_distance(self, station: Mapping[str, Any]) -> float:
+        """Return distance from the selected gauge, or infinity if unknown."""
+        if self._sea_primary is None:
+            return math.inf
+        try:
+            return self._distance_km(
+                float(self._sea_primary[CONF_LATITUDE]),
+                float(self._sea_primary[CONF_LONGITUDE]),
+                float(station["latitude"]),
+                float(station["longitude"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            return math.inf
+
+    def _nearest_tidewater_station_id(self) -> str:
+        """Return the closest prediction station to the selected gauge."""
+        return str(self._nearest_tidewater_station()["stationId"])
+
+    def _nearest_tidewater_station(self) -> dict[str, Any]:
+        """Return the closest prediction station to the selected gauge."""
+        return min(
+            self._tidewater_stations,
+            key=self._tidewater_station_distance,
+        )
+
+    def _build_tidewater_station_options(self) -> list[dict[str, str]]:
+        """Build prediction-station options ordered by proximity."""
+        options: list[dict[str, str]] = []
+        for station in sorted(
+            self._tidewater_stations,
+            key=lambda item: (
+                self._tidewater_station_distance(item),
+                str(item.get("name") or ""),
+            ),
+        ):
+            station_id = str(station["stationId"])
+            station_name = str(station.get("name") or station_id)
+            distance = self._tidewater_station_distance(station)
+            distance_label = f" — {distance:.1f} km" if math.isfinite(distance) else ""
+            options.append(
+                {
+                    "value": station_id,
+                    "label": f"{station_name} ({station_id}){distance_label}",
+                }
+            )
+        return options
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
@@ -537,25 +827,26 @@ class DMIOptionsFlowHandler(OptionsFlow):
         )
         current_include_forecast = self.config_entry.options.get(CONF_INCLUDE_FORECAST, True)
 
-        data_schema = vol.Schema(
-            {
-                vol.Optional(
-                    CONF_UPDATE_INTERVAL,
-                    default=current_interval,
-                ): NumberSelector(
-                    NumberSelectorConfig(
-                        min=10,
-                        max=60,
-                        step=1,
-                        mode=NumberSelectorMode.SLIDER,
-                        unit_of_measurement="minutes",
-                    )
-                ),
+        schema: dict[vol.Marker, Any] = {
+            vol.Optional(
+                CONF_UPDATE_INTERVAL,
+                default=current_interval,
+            ): NumberSelector(
+                NumberSelectorConfig(
+                    min=10,
+                    max=60,
+                    step=1,
+                    mode=NumberSelectorMode.SLIDER,
+                    unit_of_measurement="minutes",
+                )
+            )
+        }
+        if self.config_entry.data.get(CONF_SETUP_TYPE) != SETUP_TYPE_SEA:
+            schema[
                 vol.Optional(
                     CONF_INCLUDE_FORECAST,
                     default=current_include_forecast,
-                ): BooleanSelector(),
-            }
-        )
+                )
+            ] = BooleanSelector()
 
-        return self.async_show_form(step_id="init", data_schema=data_schema)
+        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema))

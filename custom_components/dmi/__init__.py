@@ -13,12 +13,19 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import DMIApiClient
-from .const import DOMAIN
+from .const import CONF_SETUP_TYPE, DOMAIN, SETUP_TYPE_SEA
 from .coordinator import DMIDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.WEATHER, Platform.SENSOR]
+
+
+def _entry_platforms(entry: ConfigEntry) -> list[Platform]:
+    """Return platforms appropriate for a config entry."""
+    if entry.data.get(CONF_SETUP_TYPE) == SETUP_TYPE_SEA:
+        return [Platform.SENSOR]
+    return PLATFORMS
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -37,7 +44,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     # Forward to platforms
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await hass.config_entries.async_forward_entry_setups(entry, _entry_platforms(entry))
 
     # Register update listener for options
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
@@ -47,7 +54,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, _entry_platforms(entry))
 
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)

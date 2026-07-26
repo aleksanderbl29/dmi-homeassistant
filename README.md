@@ -5,7 +5,8 @@
 [![codecov](https://codecov.io/gh/aleksanderbl29/dmi-homeassistant/branch/main/graph/badge.svg)](https://codecov.io/gh/aleksanderbl29/dmi-homeassistant)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A Home Assistant custom integration for weather data from the Danish Meteorological Institute (DMI).
+A Home Assistant custom integration for weather and sea-level data from the Danish
+Meteorological Institute (DMI).
 
 ## Features
 
@@ -25,6 +26,7 @@ A Home Assistant custom integration for weather data from the Danish Meteorologi
   - Solar Radiation
   - Last Successful Update (diagnostic timestamp)
 - Support for all active DMI weather stations in Denmark, Greenland, and the Faroe Islands
+- Tide-gauge sensors for sea level and water temperature
 - Danish and English translations
 
 ## Installation
@@ -49,8 +51,10 @@ A Home Assistant custom integration for weather data from the Danish Meteorologi
 1. Go to **Settings** → **Devices & Services**
 2. Click **+ Add Integration**
 3. Search for "DMI Weather"
-4. Select a weather station from the dropdown list
-5. Optionally enable "Use Home Assistant coordinates for forecasts"
+4. Choose a normal weather station, an advanced composite weather source, or a sea-level
+   station
+5. Select the station from the dropdown list
+6. For weather setups, optionally enable "Use Home Assistant coordinates for forecasts"
 
 ### Options
 
@@ -93,11 +97,46 @@ Depending on what the selected station reports, you may get sensors for:
 > **Note**: Not all stations report all parameters. The integration only creates sensors for parameters the selected station actually provides.
 > The diagnostic `Last Successful Update` sensor is always created for a configured station.
 
+### Sea-level Sensors
+
+The sea-level setup uses DMI's oceanographic observation service. Depending on what the
+selected tide gauge reports, the integration creates:
+
+| Sensor | Unit | Description |
+|--------|------|-------------|
+| Sea Level DVR90 | cm | Sea level relative to Danish Vertical Reference 1990 |
+| Sea Level Local Reference | cm | Sea level relative to the station's local zero |
+| Sea Level Registration | cm | Sea-level registration (Coastal Authority data uses DVR90) |
+| Water Temperature | °C | Supporting harbor water-temperature measurement |
+| Predicted Sea Level | cm | Next 10-minute astronomical tide prediction with a 24-hour series |
+| Next High Tide | cm | Next predicted astronomical high tide and its timestamp |
+| Next Low Tide | cm | Next predicted astronomical low tide and its timestamp |
+| DKSS Forecast Sea Level | cm | Weather-driven sea-level deviation forecast for up to five days |
+| Last Successful Update | timestamp | Time of the last successful data fetch from DMI |
+
+Sea-level readings also expose their observation timestamp, API creation timestamp when
+available, and DMI quality-control status as state attributes. Water-temperature measurements
+are taken inside harbors and are not standardized measurements of the undisturbed sea surface.
+
+DMI uses a separate station catalog for astronomical tide predictions. During setup, the
+integration shows which nearby prediction point it matched automatically. The normal path
+accepts that match; choosing another station is available through a separate change action.
+The predicted-level sensor includes the next 24 hours of 10-minute values in its `forecast`
+attribute, as well as summaries of the next high and low tide. These are astronomical tide
+predictions; they do not include weather-driven storm-surge effects from DMI's DKSS model.
+
+The separate DKSS sensor uses the observation station coordinates to select the most detailed
+available DMI storm-surge model and the closest modelled water grid cell. It exposes the hourly
+forecast, forecast high and low, model collection, and model coordinates as attributes. DKSS
+values are deviations from mean sea level and therefore must not be treated as directly
+equivalent to observed DVR90 or local-reference levels.
+
 ## Data Sources And API Keys
 
 This integration uses DMI's Open Data API at `opendataapi.dmi.dk`. The API is open and requires no authentication on the endpoints used here.
 
 - `metObs` observations via `https://opendataapi.dmi.dk/v2/metObs`: no API key
+- `oceanObs` observations via `https://opendataapi.dmi.dk/v2/oceanObs`: no API key
 - Forecast EDR via `https://opendataapi.dmi.dk/v1/forecastedr`: no API key
 - No Home Assistant secrets, options, or config-flow fields are used for API keys
 - The deprecated `dmigw.govcloud.dk` hostname is not used
@@ -105,11 +144,14 @@ This integration uses DMI's Open Data API at `opendataapi.dmi.dk`. The API is op
 ### Source Matrix
 
 - **Observations**: Real-time data from DMI weather stations
+- **Sea-level observations**: Tide-gauge data from DMI and the Danish Coastal Authority
+- **Storm-surge forecasts**: Coordinate-based sea-level deviations from DMI's DKSS model
 - **Forecasts**: HARMONIE-DINI model forecasts
 
 | Data | Endpoint | API key | Used by default |
 |---|---|---:|---:|
 | Station observations | DMI metObs v2 | No | Yes |
+| Sea-level observations | DMI oceanObs v2 | No | For sea-level setups |
 | HARMONIE forecast point data | DMI Forecast EDR v1 | No | Yes |
 | Deprecated DMI gateway | `dmigw.govcloud.dk` | Yes | No |
 

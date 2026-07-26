@@ -12,6 +12,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dmi.api import CannotConnect
+from custom_components.dmi.config_flow import DMIConfigFlow
 from custom_components.dmi.const import (
     CONF_BACKUP_PARAMETERS,
     CONF_BACKUP_STATION_NAME_SUFFIX,
@@ -19,6 +20,7 @@ from custom_components.dmi.const import (
     CONF_INCLUDE_FORECAST,
     CONF_SETUP_TYPE,
     CONF_STATION_ID,
+    CONF_TIDEWATER_STATION_ID,
     CONF_UPDATE_INTERVAL,
     CONF_USE_COORDINATES,
     DOMAIN,
@@ -93,7 +95,181 @@ class TestDMIConfigFlow:
         )
 
         assert result["type"] == FlowResultType.MENU
-        assert set(result["menu_options"]) == {"station", "advanced_primary"}
+        assert set(result["menu_options"]) == {"station", "advanced_primary", "sea"}
+
+    async def test_sea_flow_creates_tide_gauge_entry(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test the sea setup path creates a distinct tide-gauge entry."""
+        sea_stations = [
+            {
+                "stationId": "30017",
+                "name": "Korsør",
+                "latitude": 55.33,
+                "longitude": 11.14,
+                "type": "Tide-gauge-primary",
+                "parameterId": ["sea_reg", "sealev_dvr", "sealev_ln", "tw"],
+            },
+            {
+                "stationId": "unsupported",
+                "name": "Unsupported",
+                "parameterId": ["unknown"],
+            },
+            {
+                "stationId": "ended",
+                "name": "Ended Gauge",
+                "parameterId": ["sealev_dvr"],
+                "validTo": "2021-01-06T00:00:00Z",
+            },
+        ]
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
+            mock_api = MagicMock()
+            mock_api.get_sea_stations = AsyncMock(return_value=sea_stations)
+            mock_api.get_tidewater_stations = AsyncMock(
+                return_value=[
+                    {
+                        "stationId": "29395",
+                        "name": "Korsør Fiskerihavn",
+                        "latitude": 55.3323,
+                        "longitude": 11.1309,
+                        "lowAstronomicalTide": -22.7,
+                        "meanLowWaterSpring": -14.5,
+                    },
+                    {
+                        "stationId": "29393",
+                        "name": "Korsør",
+                        "latitude": 55.3306,
+                        "longitude": 11.1422,
+                        "lowAstronomicalTide": -23.8,
+                        "meanLowWaterSpring": -15.0,
+                    },
+                ]
+            )
+            mock_api_class.return_value = mock_api
+
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], _flow_menu_select(result, "sea")
+            )
+            options = _selector_options(result, CONF_STATION_ID)
+            assert [option["value"] for option in options] == ["30017"]
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_STATION_ID: "30017"},
+            )
+            assert result["step_id"] == "tidewater_station"
+            assert result["type"] == FlowResultType.MENU
+            assert set(result["menu_options"]) == {
+                "tidewater_accept",
+                "tidewater_change",
+            }
+            assert result["description_placeholders"] == {
+                "prediction_station_name": "Korsør",
+                "prediction_station_id": "29393",
+                "distance": "0.2",
+            }
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                _flow_menu_select(result, "tidewater_accept"),
+            )
+
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert result["title"] == "Korsør"
+        assert result["data"][CONF_SETUP_TYPE] == "sea"
+        assert result["data"][CONF_STATION_ID] == "30017"
+        assert result["data"][CONF_TIDEWATER_STATION_ID] == "29393"
+        assert result["data"]["tidewater_station_name"] == "Korsør"
+        assert result["data"]["low_astronomical_tide"] == -23.8
+        assert result["data"][CONF_USE_COORDINATES] is False
+
+    async def test_sea_flow_only_shows_station_selector_after_change_request(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test alternate tide station selection is hidden behind an explicit action."""
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
+            mock_api = MagicMock()
+            mock_api.get_sea_stations = AsyncMock(
+                return_value=[
+                    {
+                        "stationId": "30017",
+                        "name": "Korsør",
+                        "latitude": 55.33,
+                        "longitude": 11.14,
+                        "parameterId": ["sealev_dvr"],
+                    }
+                ]
+            )
+            mock_api.get_tidewater_stations = AsyncMock(
+                return_value=[
+                    {
+                        "stationId": "29393",
+                        "name": "Korsør",
+                        "latitude": 55.3306,
+                        "longitude": 11.1422,
+                    },
+                    {
+                        "stationId": "29395",
+                        "name": "Korsør Fiskerihavn",
+                        "latitude": 55.3323,
+                        "longitude": 11.1309,
+                    },
+                ]
+            )
+            mock_api_class.return_value = mock_api
+
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], _flow_menu_select(result, "sea")
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], {CONF_STATION_ID: "30017"}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                _flow_menu_select(result, "tidewater_change"),
+            )
+
+            assert result["type"] == FlowResultType.FORM
+            assert result["step_id"] == "tidewater_change"
+            prediction_options = _selector_options(result, CONF_TIDEWATER_STATION_ID)
+            assert [option["value"] for option in prediction_options] == [
+                "29393",
+                "29395",
+            ]
+            assert _field_default(result, CONF_TIDEWATER_STATION_ID) == "29393"
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_TIDEWATER_STATION_ID: "29395"},
+            )
+
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert result["data"][CONF_TIDEWATER_STATION_ID] == "29395"
+        assert result["data"]["tidewater_station_name"] == "Korsør Fiskerihavn"
+
+    async def test_sea_flow_rejects_invalid_station_selection(
+        self,
+    ) -> None:
+        """Test a stale or invalid tide-gauge selection is rejected."""
+        flow = DMIConfigFlow()
+        flow._sea_stations = [
+            {
+                "stationId": "30017",
+                "name": "Korsør",
+                "parameterId": ["sealev_dvr"],
+            }
+        ]
+
+        result = await flow.async_step_sea({CONF_STATION_ID: "missing"})
+
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "sea"
+        assert result["errors"]["base"] == "invalid_station"
 
     async def test_normal_flow_creates_entry(
         self,
