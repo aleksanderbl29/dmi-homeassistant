@@ -54,6 +54,7 @@ TIDEWATER_FORECAST_HOURS = 24
 DKSS_FORECAST_HOURS = 120
 TIDEWATER_FORECAST_REFRESH_INTERVAL = timedelta(hours=6)
 DKSS_FORECAST_REFRESH_INTERVAL = timedelta(hours=3)
+WEATHER_FORECAST_REFRESH_INTERVAL = timedelta(hours=3)
 
 
 class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -112,6 +113,8 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._tidewater_forecast_attempted_at: datetime | None = None
         self._dkss_forecast: dict[str, Any] | None = None
         self._dkss_forecast_attempted_at: datetime | None = None
+        self._weather_forecast: dict[str, Any] | None = None
+        self._weather_forecast_attempted_at: datetime | None = None
 
         # Sensor platform tracks which observation keys already have entities.
         self.known_sensor_keys: set[str] = set()
@@ -195,6 +198,19 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             **self._dkss_forecast,
             "forecast": self._future_forecast_items(
                 self._dkss_forecast.get("forecast", []),
+                "datetime",
+                now,
+            ),
+        }
+
+    def _current_weather_forecast(self, now: datetime) -> dict[str, Any] | None:
+        """Return weather forecast metadata with unexpired hourly values."""
+        if self._weather_forecast is None:
+            return None
+        return {
+            **self._weather_forecast,
+            "hourly": self._future_forecast_items(
+                self._weather_forecast.get("hourly", []),
                 "datetime",
                 now,
             ),
@@ -318,29 +334,43 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # Fetch forecast if coordinates are available and enabled.
                 # Stagger this slightly after the observations call so the
                 # two requests in this cycle are never sent back-to-back.
-                forecast = None
                 if (
                     self.setup_type != SETUP_TYPE_SEA
                     and self.include_forecast
                     and self.latitude is not None
                     and self.longitude is not None
+                    and self._forecast_refresh_due(
+                        self._weather_forecast_attempted_at,
+                        now,
+                        WEATHER_FORECAST_REFRESH_INTERVAL,
+                    )
                 ):
                     await asyncio.sleep(REQUEST_STAGGER_SECONDS)
+                    self._weather_forecast_attempted_at = now
                     try:
-                        forecast = await self.api.get_forecast(self.latitude, self.longitude)
+                        self._weather_forecast = await self.api.get_forecast(
+                            self.latitude,
+                            self.longitude,
+                        )
                         _LOGGER.debug(
                             "Fetched forecast for %s with %d hourly entries",
                             self.station_id,
-                            len(forecast.get("hourly", [])) if forecast else 0,
+                            len(self._weather_forecast.get("hourly", [])),
                         )
-                    except RateLimitExceeded:
-                        # Don't swallow this one -- let the outer handler
-                        # set the cooldown so future cycles back off too.
-                        raise
-                    except (CannotConnect, RequestTimeout, UpstreamError, TimeoutError) as err:
-                        _LOGGER.warning("Failed to fetch forecast: %s", err)
-                        # Continue without forecast data (non-rate-limit
-                        # errors only; e.g. transient connection issue).
+                    except (
+                        CannotConnect,
+                        RateLimitExceeded,
+                        RequestTimeout,
+                        UpstreamError,
+                        TimeoutError,
+                    ) as err:
+                        _LOGGER.warning(
+                            "Failed to refresh weather forecast for %s; "
+                            "continuing with cached forecast: %s",
+                            self.station_id,
+                            err,
+                        )
+                forecast = self._current_weather_forecast(now)
 
                 # Success: clear any prior cooldown.
                 self._rate_limited_until = None

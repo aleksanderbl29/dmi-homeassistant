@@ -103,6 +103,63 @@ class TestDMIDataUpdateCoordinator:
         mock_api_client.get_observations.assert_called_once_with("06180")
         mock_api_client.get_forecast.assert_called_once()
 
+    async def test_weather_forecast_is_cached_between_observation_updates(
+        self,
+        coordinator: DMIDataUpdateCoordinator,
+        mock_api_client: MagicMock,
+    ) -> None:
+        """Test frequent observations reuse the slower-moving weather forecast."""
+        now = datetime(2026, 7, 26, 5, 0, tzinfo=UTC)
+        forecast = {
+            "hourly": [
+                {
+                    "datetime": "2026-07-26T06:00:00Z",
+                    "temperature": 18.0,
+                }
+            ]
+        }
+        mock_api_client.get_forecast = AsyncMock(return_value=forecast)
+
+        with (
+            patch(
+                "custom_components.dmi.coordinator.asyncio.sleep",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "custom_components.dmi.coordinator.dt_util.utcnow",
+                return_value=now,
+            ),
+        ):
+            first_data = await coordinator._async_update_data()
+            second_data = await coordinator._async_update_data()
+
+        assert first_data["forecast"] == forecast
+        assert second_data["forecast"] == forecast
+        assert mock_api_client.get_observations.await_count == 2
+        mock_api_client.get_forecast.assert_awaited_once()
+
+    async def test_weather_forecast_rate_limit_keeps_fresh_observations(
+        self,
+        coordinator: DMIDataUpdateCoordinator,
+        mock_api_client: MagicMock,
+    ) -> None:
+        """Test Forecast EDR throttling does not throttle metObs updates."""
+        mock_api_client.get_forecast = AsyncMock(side_effect=RateLimitExceeded("Server is busy"))
+
+        with patch(
+            "custom_components.dmi.coordinator.asyncio.sleep",
+            new_callable=AsyncMock,
+        ):
+            first_data = await coordinator._async_update_data()
+            second_data = await coordinator._async_update_data()
+
+        assert first_data["observations"]["temp_dry"]["value"] == 15.5
+        assert second_data["observations"]["temp_dry"]["value"] == 15.5
+        assert first_data["forecast"] is None
+        assert coordinator._rate_limited_until is None
+        assert mock_api_client.get_observations.await_count == 2
+        mock_api_client.get_forecast.assert_awaited_once()
+
     async def test_sea_update_fetches_tidewater_forecast(
         self,
         hass: HomeAssistant,

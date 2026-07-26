@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
@@ -581,8 +581,12 @@ class TestDMISensorIntegration:
         )
         entry.add_to_hass(hass)
 
-        await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
+        with patch(
+            "custom_components.dmi.coordinator.dt_util.utcnow",
+            return_value=datetime(2026, 7, 25, 9, 35, tzinfo=UTC),
+        ):
+            await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
 
         sea_level = hass.states.get("sensor.korsor_sea_level_dvr90")
         water_temperature = hass.states.get("sensor.korsor_water_temperature")
