@@ -1,3 +1,25 @@
+# [1.4.0](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.3.0...v1.4.0) (2026-07-26)
+
+
+### Bug Fixes
+
+* **api:** reduce DKSS forecast payloads ([2f021eb](https://github.com/aleksanderbl29/dmi-homeassistant/commit/2f021eb3e3884c95d477a31ee513824a57cce9fb))
+* **coordinator:** isolate forecast API failures ([1c4571d](https://github.com/aleksanderbl29/dmi-homeassistant/commit/1c4571d3a1560a5fd8d83f8c2ee88f9af842c871))
+* **coordinator:** preserve setup during rate limits ([db56871](https://github.com/aleksanderbl29/dmi-homeassistant/commit/db5687140f65ad5122acb6bddf5ea32470f711ab))
+* **sea:** reduce forecast API requests ([9f3d055](https://github.com/aleksanderbl29/dmi-homeassistant/commit/9f3d0550e91f4c2622e9f0d7a4e26005b7a9112f))
+
+
+### Features
+
+* **api:** add astronomical tide forecasts ([4fb27f1](https://github.com/aleksanderbl29/dmi-homeassistant/commit/4fb27f134f164a2dace3fa269ccc9b0f5250affa))
+* **api:** add coordinate-based DKSS forecasts ([766b62a](https://github.com/aleksanderbl29/dmi-homeassistant/commit/766b62a66fda382773b790df7865d1904eaa3f7f))
+* **api:** add ocean observation support ([8b7bc76](https://github.com/aleksanderbl29/dmi-homeassistant/commit/8b7bc765792998ecbc5776d55da79376ce062280))
+* **config:** confirm automatic tide station match ([951cb92](https://github.com/aleksanderbl29/dmi-homeassistant/commit/951cb92109507b7396a5de03728577d1c814852a))
+* **sea:** add tide-gauge sensor setup ([f1a3733](https://github.com/aleksanderbl29/dmi-homeassistant/commit/f1a37334b215fee3aacb2ff82aaeff874e7bf437))
+* **sea:** configure tide prediction stations ([744e11e](https://github.com/aleksanderbl29/dmi-homeassistant/commit/744e11e4bdf11cec6cc9b209721f3609500a2013))
+* **sensor:** expose astronomical tide predictions ([5829c94](https://github.com/aleksanderbl29/dmi-homeassistant/commit/5829c94cd2d7ebd10e2a95fa73152b3444e4801c))
+* **sensor:** expose DKSS sea-level forecasts ([7581cee](https://github.com/aleksanderbl29/dmi-homeassistant/commit/7581cee5b2da784f91ecb292520a2e83abe4b586))
+
 # [1.3.0](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.2.0...v1.3.0) (2026-07-06)
 
 
