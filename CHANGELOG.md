@@ -1,3 +1,10 @@
+## [1.4.1](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.4.0...v1.4.1) (2026-07-27)
+
+
+### Bug Fixes
+
+* **coordinator:** share DMI rate-limit state ([f8d7c7c](https://github.com/aleksanderbl29/dmi-homeassistant/commit/f8d7c7ca86f9b2c92329b434a0df5708b835ba29))
+
 # [1.4.0](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.3.0...v1.4.0) (2026-07-26)
 
 
