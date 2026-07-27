@@ -147,9 +147,11 @@ class DMIApiClient:
                 return data
         except RateLimitExceeded:
             raise
-        except asyncio.CancelledError as err:
-            _LOGGER.error("DMI API request was cancelled while waiting for a response")
-            raise RequestTimeout("Request cancelled while waiting for DMI API") from err
+        except asyncio.CancelledError:
+            # Cancellation is how Home Assistant stops in-flight work during
+            # reload and shutdown. It must not be converted into a retryable
+            # request failure, otherwise the task keeps the shutdown waiting.
+            raise
         except aiohttp.ContentTypeError as err:
             _LOGGER.error("Invalid JSON response from DMI API: %s", err)
             raise UpstreamError(f"Invalid JSON response from DMI API: {err}") from err

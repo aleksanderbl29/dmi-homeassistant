@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -45,6 +46,12 @@ _LOGGER = logging.getLogger(__name__)
 
 # Fixed cooldown applied after a 429, independent of HA's own retry backoff.
 RATE_LIMIT_COOLDOWN = timedelta(minutes=1)
+MAX_RATE_LIMIT_COOLDOWN = timedelta(hours=1)
+
+# Keep this outside the config-entry coordinator map so it survives failed
+# setup attempts and is shared by every DMI entry in the Home Assistant
+# instance. DMI applies fair-use limits across requests, not per coordinator.
+RATE_LIMIT_STATE_KEY = f"{DOMAIN}_api_state"
 
 # Minimum spacing between the two outbound requests in a single update
 # cycle (observations, then forecast), so we never burst two requests
@@ -55,6 +62,15 @@ DKSS_FORECAST_HOURS = 120
 TIDEWATER_FORECAST_REFRESH_INTERVAL = timedelta(hours=6)
 DKSS_FORECAST_REFRESH_INTERVAL = timedelta(hours=3)
 WEATHER_FORECAST_REFRESH_INTERVAL = timedelta(hours=3)
+
+
+@dataclass
+class _SharedApiState:
+    """Rate-limit and concurrency state shared by all DMI config entries."""
+
+    update_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    rate_limited_until: datetime | None = None
+    consecutive_rate_limits: int = 0
 
 
 class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -102,9 +118,11 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             and config_entry.options.get(CONF_INCLUDE_FORECAST, True)
         )
 
-        # Tracks a cooldown window after a 429, so a single rate-limit hit
-        # doesn't turn into a retry storm via HA's own backoff mechanism.
-        self._rate_limited_until: datetime | None = None
+        # The state must outlive this coordinator because Home Assistant
+        # recreates coordinators when an initial config-entry setup is retried.
+        self._api_state: _SharedApiState = hass.data.setdefault(
+            RATE_LIMIT_STATE_KEY, _SharedApiState()
+        )
 
         # Forecast products change much less frequently than observations.
         # Cache them independently so ten-minute sea observations do not
@@ -126,6 +144,16 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=update_interval,
             config_entry=config_entry,
         )
+
+    @property
+    def _rate_limited_until(self) -> datetime | None:
+        """Return the shared rate-limit deadline."""
+        return self._api_state.rate_limited_until
+
+    @_rate_limited_until.setter
+    def _rate_limited_until(self, value: datetime | None) -> None:
+        """Set the shared rate-limit deadline."""
+        self._api_state.rate_limited_until = value
 
     def _return_cached_data(
         self,
@@ -225,6 +253,14 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Raises:
             UpdateFailed: If data fetch fails and no cached data is available.
         """
+        # Multiple entries (and overlapping manual refreshes) otherwise burst
+        # requests at DMI together. Recheck the shared cooldown only after
+        # acquiring the lock because another entry may have just received 429.
+        async with self._api_state.update_lock:
+            return await self._async_update_data_locked()
+
+    async def _async_update_data_locked(self) -> dict[str, Any]:
+        """Fetch data while holding the shared DMI update lock."""
         now = dt_util.utcnow()
 
         # If we were rate limited recently, skip hitting DMI again this
@@ -238,7 +274,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             if self.data is not None:
                 return self.data
-            raise UpdateFailed("Still in rate-limit cooldown and no cached data yet")
+            return self._empty_data()
 
         try:
             async with asyncio.timeout(60):
@@ -372,8 +408,10 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         )
                 forecast = self._current_weather_forecast(now)
 
-                # Success: clear any prior cooldown.
+                # Success: clear the shared cooldown and its exponential
+                # backoff, since DMI is accepting requests again.
                 self._rate_limited_until = None
+                self._api_state.consecutive_rate_limits = 0
 
                 return {
                     "observations": observations,
@@ -384,10 +422,17 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 }
 
         except RateLimitExceeded:
-            self._rate_limited_until = now + RATE_LIMIT_COOLDOWN
+            self._api_state.consecutive_rate_limits += 1
+            multiplier = 2 ** (self._api_state.consecutive_rate_limits - 1)
+            cooldown = min(
+                RATE_LIMIT_COOLDOWN * multiplier,
+                MAX_RATE_LIMIT_COOLDOWN,
+            )
+            self._rate_limited_until = dt_util.utcnow() + cooldown
             _LOGGER.warning(
-                "DMI rate limit hit for %s, pausing updates until %s",
+                "DMI rate limit hit for %s, pausing all DMI updates for %s until %s",
                 self.station_id,
+                cooldown,
                 self._rate_limited_until,
             )
             # If we have prior good data, keep serving it quietly rather

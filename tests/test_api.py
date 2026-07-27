@@ -1135,16 +1135,16 @@ class TestDMIApiClient:
         with pytest.raises(RequestTimeout):
             await api_client.get_stations()
 
-    async def test_cancelled_request_becomes_request_timeout(
+    async def test_cancelled_request_propagates(
         self,
         api_client: DMIApiClient,
     ) -> None:
-        """Test cancelled outbound requests surface as retryable request timeouts."""
+        """Test cancellation propagates so Home Assistant can stop the task."""
         mock_context = AsyncMock()
         mock_context.__aenter__.side_effect = asyncio.CancelledError
         api_client._session.get = MagicMock(return_value=mock_context)
 
-        with pytest.raises(RequestTimeout, match="Request cancelled"):
+        with pytest.raises(asyncio.CancelledError):
             await api_client.get_stations()
 
     async def test_unexpected_error(
