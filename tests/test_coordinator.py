@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dmi.api import (
@@ -30,6 +31,7 @@ from custom_components.dmi.const import (
     DOMAIN,
 )
 from custom_components.dmi.coordinator import (
+    RATE_LIMIT_COOLDOWN,
     REQUEST_STAGGER_SECONDS,
     DMIDataUpdateCoordinator,
 )
@@ -497,8 +499,6 @@ class TestDMIDataUpdateCoordinator:
         mock_api_client: MagicMock,
     ) -> None:
         """Test active cooldown skips API calls and serves cached data."""
-        from homeassistant.util import dt as dt_util
-
         cached_data = {
             "observations": {"temp_dry": {"value": 15.5, "observed": "2024-01-15T12:00:00Z"}},
             "forecast": None,
@@ -512,6 +512,45 @@ class TestDMIDataUpdateCoordinator:
         assert data is cached_data
         mock_api_client.get_observations.assert_not_called()
         mock_api_client.get_forecast.assert_not_called()
+
+    async def test_rate_limit_state_is_shared_between_entries(
+        self,
+        hass: HomeAssistant,
+        mock_api_client: MagicMock,
+        mock_config_entry: MockConfigEntry,
+    ) -> None:
+        """Test a new coordinator honors a previous coordinator's cooldown."""
+        mock_config_entry.add_to_hass(hass)
+        first = DMIDataUpdateCoordinator(hass, mock_config_entry, mock_api_client)
+        first._rate_limited_until = dt_util.utcnow() + RATE_LIMIT_COOLDOWN
+
+        second = DMIDataUpdateCoordinator(hass, mock_config_entry, mock_api_client)
+
+        data = await second._async_update_data()
+
+        assert data == second._empty_data()
+        mock_api_client.get_observations.assert_not_called()
+
+    async def test_repeated_rate_limits_increase_shared_cooldown(
+        self,
+        coordinator: DMIDataUpdateCoordinator,
+        mock_api_client: MagicMock,
+    ) -> None:
+        """Test repeated 429 responses progressively increase the cooldown."""
+        mock_api_client.get_observations.side_effect = RateLimitExceeded("Rate limit")
+
+        first_data = await coordinator._async_update_data()
+        first_deadline = coordinator._rate_limited_until
+        assert first_deadline is not None
+        assert first_data == coordinator._empty_data()
+
+        coordinator._rate_limited_until = None
+        second_data = await coordinator._async_update_data()
+        second_deadline = coordinator._rate_limited_until
+        assert second_deadline is not None
+        assert second_data == coordinator._empty_data()
+
+        assert second_deadline - dt_util.utcnow() > RATE_LIMIT_COOLDOWN
 
     async def test_advanced_update_staggers_backup_fetches(
         self,
