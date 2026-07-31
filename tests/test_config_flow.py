@@ -17,6 +17,7 @@ from custom_components.dmi.const import (
     CONF_BACKUP_PARAMETERS,
     CONF_BACKUP_STATION_NAME_SUFFIX,
     CONF_BACKUP_STATIONS,
+    CONF_HAS_SEA_OBSERVATIONS,
     CONF_INCLUDE_FORECAST,
     CONF_SETUP_TYPE,
     CONF_STATION_ID,
@@ -155,7 +156,11 @@ class TestDMIConfigFlow:
                 result["flow_id"], _flow_menu_select(result, "sea")
             )
             options = _selector_options(result, CONF_STATION_ID)
-            assert [option["value"] for option in options] == ["30017"]
+            assert [option["value"] for option in options] == [
+                "29393",
+                "30017",
+                "29395",
+            ]
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"],
                 {CONF_STATION_ID: "30017"},
@@ -180,10 +185,65 @@ class TestDMIConfigFlow:
         assert result["title"] == "Korsør"
         assert result["data"][CONF_SETUP_TYPE] == "sea"
         assert result["data"][CONF_STATION_ID] == "30017"
+        assert result["data"][CONF_HAS_SEA_OBSERVATIONS] is True
         assert result["data"][CONF_TIDEWATER_STATION_ID] == "29393"
         assert result["data"]["tidewater_station_name"] == "Korsør"
         assert result["data"]["low_astronomical_tide"] == -23.8
         assert result["data"][CONF_USE_COORDINATES] is False
+
+    async def test_sea_flow_creates_prediction_only_entry(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test tide prediction locations without observations remain selectable."""
+        kyndbyvaerket = {
+            "stationId": "30121",
+            "name": "Kyndbyværket Havn",
+            "latitude": 55.8117,
+            "longitude": 11.8773,
+            "lowAstronomicalTide": -16.8,
+            "meanLowWaterSpring": -9.8,
+        }
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
+            mock_api = MagicMock()
+            mock_api.get_sea_stations = AsyncMock(return_value=[])
+            mock_api.get_tidewater_stations = AsyncMock(return_value=[kyndbyvaerket])
+            mock_api_class.return_value = mock_api
+
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], _flow_menu_select(result, "sea")
+            )
+            assert _selector_options(result, CONF_STATION_ID) == [
+                {
+                    "value": "30121",
+                    "label": "Kyndbyværket Havn (30121) — prediction only",
+                }
+            ]
+
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], {CONF_STATION_ID: "30121"}
+            )
+            assert result["description_placeholders"] == {
+                "prediction_station_name": "Kyndbyværket Havn",
+                "prediction_station_id": "30121",
+                "distance": "0.0",
+            }
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                _flow_menu_select(result, "tidewater_accept"),
+            )
+
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert result["title"] == "Kyndbyværket Havn"
+        assert result["data"][CONF_STATION_ID] == "30121"
+        assert result["data"][CONF_TIDEWATER_STATION_ID] == "30121"
+        assert result["data"][CONF_HAS_SEA_OBSERVATIONS] is False
+        assert result["data"]["latitude"] == 55.8117
+        mock_api.get_sea_stations.assert_awaited_once_with(active_only=True)
+        mock_api.get_tidewater_stations.assert_awaited_once()
 
     async def test_sea_flow_only_shows_station_selector_after_change_request(
         self,

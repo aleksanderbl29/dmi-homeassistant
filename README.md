@@ -99,8 +99,11 @@ Depending on what the selected station reports, you may get sensors for:
 
 ### Sea-level Sensors
 
-The sea-level setup uses DMI's oceanographic observation service. Depending on what the
-selected tide gauge reports, the integration creates:
+The sea-level setup combines DMI's oceanographic observation and astronomical prediction
+station catalogs. Stations marked as **prediction only** in setup, such as Kyndbyværket,
+do not publish observations through the Open Data API, but can still provide astronomical
+tide predictions and coordinate-based DKSS forecasts. Depending on the selected station,
+the integration creates:
 
 | Sensor | Unit | Description |
 |--------|------|-------------|
@@ -118,8 +121,10 @@ Sea-level readings also expose their observation timestamp, API creation timesta
 available, and DMI quality-control status as state attributes. Water-temperature measurements
 are taken inside harbors and are not standardized measurements of the undisturbed sea surface.
 
-DMI uses a separate station catalog for astronomical tide predictions. During setup, the
-integration shows which nearby prediction point it matched automatically. The normal path
+DMI uses a separate station catalog for astronomical tide predictions. The integration
+includes those locations in the main sea-level station selector even when no matching
+observation gauge exists. During setup, it shows which nearby prediction point it matched
+automatically. The normal path
 accepts that match; choosing another station is available through a separate change action.
 The predicted-level sensor includes the next 24 hours of 10-minute values in its `forecast`
 attribute, as well as summaries of the next high and low tide. These are astronomical tide

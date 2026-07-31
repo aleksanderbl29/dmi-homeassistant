@@ -12,14 +12,14 @@
       },
       "sea": {
         "title": "DMI Sea Level Setup",
-        "description": "Choose a tide-gauge station. All available sea-level reference measurements and water temperature will be added as sensors.",
+        "description": "Choose a sea-level station. Stations marked as prediction only provide astronomical tide and DKSS forecasts; other stations also provide available sea-level and water-temperature observations.",
         "data": {
           "station_id": "Sea-level station"
         }
       },
       "tidewater_station": {
         "title": "Tide Prediction Source",
-        "description": "Astronomical tide predictions will come from {prediction_station_name} ({prediction_station_id}), {distance} km from the observation station.",
+        "description": "Astronomical tide predictions will come from {prediction_station_name} ({prediction_station_id}), {distance} km from the selected sea-level location.",
         "menu_options": {
           "tidewater_accept": "Use this prediction station",
           "tidewater_change": "Choose another prediction station"

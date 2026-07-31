@@ -12,14 +12,14 @@
       },
       "sea": {
         "title": "Opsætning af DMI Vandstand",
-        "description": "Vælg en vandstandsstation. Alle tilgængelige vandstandsmålinger og vandtemperatur tilføjes som sensorer.",
+        "description": "Vælg en vandstandsstation. Stationer markeret som 'prediction only' leverer astronomiske tidevands- og DKSS-prognoser; øvrige stationer leverer også tilgængelige målinger af vandstand og vandtemperatur.",
         "data": {
           "station_id": "Vandstandsstation"
         }
       },
       "tidewater_station": {
         "title": "Kilde til tidevandsprognose",
-        "description": "Astronomiske tidevandsprognoser hentes fra {prediction_station_name} ({prediction_station_id}), {distance} km fra observationsstationen.",
+        "description": "Astronomiske tidevandsprognoser hentes fra {prediction_station_name} ({prediction_station_id}), {distance} km fra den valgte vandstandslokalitet.",
         "menu_options": {
           "tidewater_accept": "Brug denne prognosestation",
           "tidewater_change": "Vælg en anden prognosestation"

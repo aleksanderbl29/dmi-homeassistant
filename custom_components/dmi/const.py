@@ -41,6 +41,7 @@ CONF_TIDEWATER_LATITUDE = "tidewater_latitude"
 CONF_TIDEWATER_LONGITUDE = "tidewater_longitude"
 CONF_LOW_ASTRONOMICAL_TIDE = "low_astronomical_tide"
 CONF_MEAN_LOW_WATER_SPRING = "mean_low_water_spring"
+CONF_HAS_SEA_OBSERVATIONS = "has_sea_observations"
 
 SETUP_TYPE_NORMAL = "normal"
 SETUP_TYPE_ADVANCED = "advanced"

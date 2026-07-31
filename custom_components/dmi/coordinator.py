@@ -23,6 +23,7 @@ from .api import (
 from .const import (
     CONF_BACKUP_PARAMETERS,
     CONF_BACKUP_STATIONS,
+    CONF_HAS_SEA_OBSERVATIONS,
     CONF_INCLUDE_FORECAST,
     CONF_LATITUDE,
     CONF_LONGITUDE,
@@ -95,6 +96,9 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.station_id: str = str(config_entry.data.get(CONF_STATION_ID) or "")
         self.station_name: str = str(config_entry.data.get(CONF_STATION_NAME) or "DMI Weather")
         self.setup_type: str = str(config_entry.data.get(CONF_SETUP_TYPE) or "normal")
+        self.has_sea_observations: bool = bool(
+            config_entry.data.get(CONF_HAS_SEA_OBSERVATIONS, True)
+        )
         self.tidewater_station_id: str = str(config_entry.data.get(CONF_TIDEWATER_STATION_ID) or "")
         self.backup_stations: list[dict[str, Any]] = list(
             config_entry.data.get(CONF_BACKUP_STATIONS, [])
@@ -286,8 +290,10 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self.longitude,
                 )
                 # Fetch observations from the configured DMI dataset.
-                if self.setup_type == SETUP_TYPE_SEA:
+                if self.setup_type == SETUP_TYPE_SEA and self.has_sea_observations:
                     primary_observations = await self.api.get_sea_observations(self.station_id)
+                elif self.setup_type == SETUP_TYPE_SEA:
+                    primary_observations = {}
                 else:
                     primary_observations = await self.api.get_observations(self.station_id)
                 observations = self._annotate_observations(

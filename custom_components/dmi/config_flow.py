@@ -33,6 +33,7 @@ from .const import (
     CONF_BACKUP_PARAMETERS,
     CONF_BACKUP_STATION_NAME_SUFFIX,
     CONF_BACKUP_STATIONS,
+    CONF_HAS_SEA_OBSERVATIONS,
     CONF_INCLUDE_FORECAST,
     CONF_LATITUDE,
     CONF_LONGITUDE,
@@ -103,6 +104,7 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
                     CONF_STATION_NAME: station_name,
                     CONF_LATITUDE: station.get("latitude"),
                     CONF_LONGITUDE: station.get("longitude"),
+                    CONF_HAS_SEA_OBSERVATIONS: station.get(CONF_HAS_SEA_OBSERVATIONS, True),
                     CONF_USE_COORDINATES: False,
                 }
                 return await self.async_step_tidewater_station()
@@ -591,9 +593,14 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
             if not station_id:
                 continue
             name = station.get("name") or f"Station {station_id}"
+            prediction_only = station.get(CONF_HAS_SEA_OBSERVATIONS) is False
             station_options_by_id[str(station_id)] = {
                 "value": str(station_id),
-                "label": f"{name} ({station_id})",
+                "label": (
+                    f"{name} ({station_id}) — prediction only"
+                    if prediction_only
+                    else f"{name} ({station_id})"
+                ),
             }
 
         station_options = list(station_options_by_id.values())
@@ -693,15 +700,18 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
         return bool(self._stations)
 
     async def _async_load_sea_stations(self) -> bool:
-        """Load supported tide-gauge stations from the DMI oceanObs API."""
+        """Load observation gauges and prediction-only sea-level stations."""
         if self._sea_stations:
             return True
 
+        observation_stations: list[dict[str, Any]] = []
+        prediction_stations: list[dict[str, Any]] = []
+        session = async_get_clientsession(self.hass)
+        api_client = DMIApiClient(session)
+
         try:
-            session = async_get_clientsession(self.hass)
-            api_client = DMIApiClient(session)
             stations = await api_client.get_sea_stations(active_only=True)
-            self._sea_stations = [
+            observation_stations = [
                 station
                 for station in stations
                 if station.get("validTo") is None
@@ -710,13 +720,51 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
                     for parameter_id in station.get("parameterId", [])
                 )
             ]
-            _LOGGER.debug("Fetched %d supported tide-gauge stations", len(self._sea_stations))
+            _LOGGER.debug(
+                "Fetched %d supported tide-gauge stations",
+                len(observation_stations),
+            )
         except CannotConnect as err:
             _LOGGER.error("Cannot connect to DMI oceanObs API: %s", err)
-            return False
         except Exception as err:  # pragma: no cover - defensive path
             _LOGGER.exception("Unexpected error fetching tide-gauge stations: %s", err)
-            return False
+
+        try:
+            prediction_stations = await api_client.get_tidewater_stations()
+            self._tidewater_stations = prediction_stations
+            _LOGGER.debug(
+                "Fetched %d astronomical prediction stations",
+                len(prediction_stations),
+            )
+        except CannotConnect as err:
+            _LOGGER.error("Cannot connect to DMI tidewater API: %s", err)
+        except Exception as err:  # pragma: no cover - defensive path
+            _LOGGER.exception("Unexpected error fetching prediction stations: %s", err)
+
+        stations_by_id = {
+            str(station["stationId"]): {
+                **station,
+                CONF_HAS_SEA_OBSERVATIONS: True,
+            }
+            for station in observation_stations
+            if station.get("stationId")
+        }
+        for station in prediction_stations:
+            station_id = str(station.get("stationId") or "")
+            if not station_id or station_id in stations_by_id:
+                continue
+            stations_by_id[station_id] = {
+                **station,
+                "parameterId": [],
+                CONF_HAS_SEA_OBSERVATIONS: False,
+            }
+
+        self._sea_stations = list(stations_by_id.values())
+        _LOGGER.debug(
+            "Offering %d sea-level stations (%d prediction-only)",
+            len(self._sea_stations),
+            sum(station[CONF_HAS_SEA_OBSERVATIONS] is False for station in self._sea_stations),
+        )
 
         return bool(self._sea_stations)
 
