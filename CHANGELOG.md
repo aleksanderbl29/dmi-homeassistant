@@ -1,3 +1,10 @@
+## [1.4.2](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.4.1...v1.4.2) (2026-08-01)
+
+
+### Bug Fixes
+
+* **sea:** include prediction-only stations ([05ad675](https://github.com/aleksanderbl29/dmi-homeassistant/commit/05ad6752bbfd206e7028bf02cf24e4086fadb9e6))
+
 ## [1.4.1](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.4.0...v1.4.1) (2026-07-27)
 
 
