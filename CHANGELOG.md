@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.4.2...v1.5.0) (2026-08-02)
+
+
+### Features
+
+* **sea:** support observation sources for prediction-only stations ([e28f68f](https://github.com/aleksanderbl29/dmi-homeassistant/commit/e28f68fe4f607e0b80a1ad66a303697a09a3a7aa))
+
 ## [1.4.2](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.4.1...v1.4.2) (2026-08-01)
 
 
