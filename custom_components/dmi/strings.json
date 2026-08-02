@@ -17,6 +17,24 @@
           "station_id": "Sea-level station"
         }
       },
+      "sea_observation_station": {
+        "title": "Observation Source",
+        "description": "Live sea observations will come from {observation_station_name} ({observation_station_id}), {distance} km from the selected prediction-only location.",
+        "menu_options": {
+          "sea_observation_accept": "Use this observation station",
+          "sea_observation_change": "Choose another observation station"
+        }
+      },
+      "sea_observation_accept": {
+        "title": "Observation Source"
+      },
+      "sea_observation_change": {
+        "title": "Choose Observation Station",
+        "description": "Select a different DMI station for live sea-level and water-temperature observations.",
+        "data": {
+          "sea_observation_station_id": "Observation station"
+        }
+      },
       "tidewater_station": {
         "title": "Tide Prediction Source",
         "description": "Astronomical tide predictions will come from {prediction_station_name} ({prediction_station_id}), {distance} km from the selected sea-level location.",
@@ -81,6 +99,7 @@
       "cannot_connect": "Failed to connect to DMI API",
       "unknown": "Unexpected error",
       "invalid_station": "Selected station is invalid",
+      "no_observation_station": "No observation-capable sea station is available",
       "backup_matches_primary": "The backup station cannot be the same as the primary station",
       "duplicate_backup_station": "This backup station is already selected",
       "no_backup_parameters": "No supported backup-only parameters are available for this station"

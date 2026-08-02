@@ -17,6 +17,24 @@
           "station_id": "Vandstandsstation"
         }
       },
+      "sea_observation_station": {
+        "title": "Observationskilde",
+        "description": "Aktuelle havobservationer hentes fra {observation_station_name} ({observation_station_id}), {distance} km fra den valgte lokalitet, der kun har prognoser.",
+        "menu_options": {
+          "sea_observation_accept": "Brug denne observationsstation",
+          "sea_observation_change": "Vælg en anden observationsstation"
+        }
+      },
+      "sea_observation_accept": {
+        "title": "Observationskilde"
+      },
+      "sea_observation_change": {
+        "title": "Vælg observationsstation",
+        "description": "Vælg en anden DMI-station til aktuelle observationer af vandstand og vandtemperatur.",
+        "data": {
+          "sea_observation_station_id": "Observationsstation"
+        }
+      },
       "tidewater_station": {
         "title": "Kilde til tidevandsprognose",
         "description": "Astronomiske tidevandsprognoser hentes fra {prediction_station_name} ({prediction_station_id}), {distance} km fra den valgte vandstandslokalitet.",
@@ -81,6 +99,7 @@
       "cannot_connect": "Kunne ikke oprette forbindelse til DMI API",
       "unknown": "Uventet fejl",
       "invalid_station": "Den valgte station er ugyldig",
+      "no_observation_station": "Der er ingen tilgængelig vandstandsstation med observationer",
       "backup_matches_primary": "Backupstationen må ikke være den samme som den primære station",
       "duplicate_backup_station": "Denne backupstation er allerede valgt",
       "no_backup_parameters": "Der er ingen understøttede parametre, som kun findes på denne backupstation"

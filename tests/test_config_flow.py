@@ -19,6 +19,8 @@ from custom_components.dmi.const import (
     CONF_BACKUP_STATIONS,
     CONF_HAS_SEA_OBSERVATIONS,
     CONF_INCLUDE_FORECAST,
+    CONF_SEA_OBSERVATION_STATION_ID,
+    CONF_SEA_OBSERVATION_STATION_NAME,
     CONF_SETUP_TYPE,
     CONF_STATION_ID,
     CONF_TIDEWATER_STATION_ID,
@@ -204,9 +206,16 @@ class TestDMIConfigFlow:
             "lowAstronomicalTide": -16.8,
             "meanLowWaterSpring": -9.8,
         }
+        observation_station = {
+            "stationId": "30119",
+            "name": "Jægerspris Kignæs Havn",
+            "latitude": 55.8505,
+            "longitude": 11.9507,
+            "parameterId": ["sea_reg"],
+        }
         with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
             mock_api = MagicMock()
-            mock_api.get_sea_stations = AsyncMock(return_value=[])
+            mock_api.get_sea_stations = AsyncMock(return_value=[observation_station])
             mock_api.get_tidewater_stations = AsyncMock(return_value=[kyndbyvaerket])
             mock_api_class.return_value = mock_api
 
@@ -216,16 +225,26 @@ class TestDMIConfigFlow:
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"], _flow_menu_select(result, "sea")
             )
-            assert _selector_options(result, CONF_STATION_ID) == [
-                {
-                    "value": "30121",
-                    "label": "Kyndbyværket Havn (30121) — prediction only",
-                }
-            ]
+            options = _selector_options(result, CONF_STATION_ID)
+            assert next(option for option in options if option["value"] == "30121") == {
+                "value": "30121",
+                "label": "Kyndbyværket Havn (30121) — prediction only",
+            }
 
             result = await hass.config_entries.flow.async_configure(
                 result["flow_id"], {CONF_STATION_ID: "30121"}
             )
+            assert result["step_id"] == "sea_observation_station"
+            assert result["description_placeholders"] == {
+                "observation_station_name": "Jægerspris Kignæs Havn",
+                "observation_station_id": "30119",
+                "distance": "6.3",
+            }
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                _flow_menu_select(result, "sea_observation_accept"),
+            )
+            assert result["step_id"] == "tidewater_station"
             assert result["description_placeholders"] == {
                 "prediction_station_name": "Kyndbyværket Havn",
                 "prediction_station_id": "30121",
@@ -241,9 +260,76 @@ class TestDMIConfigFlow:
         assert result["data"][CONF_STATION_ID] == "30121"
         assert result["data"][CONF_TIDEWATER_STATION_ID] == "30121"
         assert result["data"][CONF_HAS_SEA_OBSERVATIONS] is False
+        assert result["data"][CONF_SEA_OBSERVATION_STATION_ID] == "30119"
+        assert result["data"][CONF_SEA_OBSERVATION_STATION_NAME] == "Jægerspris Kignæs Havn"
         assert result["data"]["latitude"] == 55.8117
         mock_api.get_sea_stations.assert_awaited_once_with(active_only=True)
         mock_api.get_tidewater_stations.assert_awaited_once()
+
+    async def test_prediction_only_flow_allows_observation_source_change(
+        self,
+        hass: HomeAssistant,
+    ) -> None:
+        """Test a different live-observation source can be selected explicitly."""
+        observation_stations = [
+            {
+                "stationId": "30119",
+                "name": "Jægerspris Kignæs Havn",
+                "latitude": 55.8505,
+                "longitude": 11.9507,
+                "parameterId": ["sea_reg"],
+            },
+            {
+                "stationId": "30106",
+                "name": "Frederiksværk Havn",
+                "latitude": 55.9667,
+                "longitude": 12.0167,
+                "parameterId": ["sea_reg"],
+            },
+        ]
+        prediction_station = {
+            "stationId": "30121",
+            "name": "Kyndbyværket Havn",
+            "latitude": 55.8117,
+            "longitude": 11.8773,
+        }
+        with patch("custom_components.dmi.config_flow.DMIApiClient") as mock_api_class:
+            mock_api = MagicMock()
+            mock_api.get_sea_stations = AsyncMock(return_value=observation_stations)
+            mock_api.get_tidewater_stations = AsyncMock(return_value=[prediction_station])
+            mock_api_class.return_value = mock_api
+
+            result = await hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": config_entries.SOURCE_USER}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], _flow_menu_select(result, "sea")
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], {CONF_STATION_ID: "30121"}
+            )
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                _flow_menu_select(result, "sea_observation_change"),
+            )
+
+            assert result["step_id"] == "sea_observation_change"
+            source_options = _selector_options(result, CONF_SEA_OBSERVATION_STATION_ID)
+            assert [option["value"] for option in source_options] == ["30119", "30106"]
+            assert _field_default(result, CONF_SEA_OBSERVATION_STATION_ID) == "30119"
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                {CONF_SEA_OBSERVATION_STATION_ID: "30106"},
+            )
+            assert result["step_id"] == "tidewater_station"
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"],
+                _flow_menu_select(result, "tidewater_accept"),
+            )
+
+        assert result["type"] == FlowResultType.CREATE_ENTRY
+        assert result["data"][CONF_SEA_OBSERVATION_STATION_ID] == "30106"
+        assert result["data"][CONF_SEA_OBSERVATION_STATION_NAME] == "Frederiksværk Havn"
 
     async def test_sea_flow_only_shows_station_selector_after_change_request(
         self,

@@ -39,6 +39,10 @@ from .const import (
     CONF_LONGITUDE,
     CONF_LOW_ASTRONOMICAL_TIDE,
     CONF_MEAN_LOW_WATER_SPRING,
+    CONF_SEA_OBSERVATION_LATITUDE,
+    CONF_SEA_OBSERVATION_LONGITUDE,
+    CONF_SEA_OBSERVATION_STATION_ID,
+    CONF_SEA_OBSERVATION_STATION_NAME,
     CONF_SETUP_TYPE,
     CONF_STATION_ID,
     CONF_STATION_NAME,
@@ -107,7 +111,9 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
                     CONF_HAS_SEA_OBSERVATIONS: station.get(CONF_HAS_SEA_OBSERVATIONS, True),
                     CONF_USE_COORDINATES: False,
                 }
-                return await self.async_step_tidewater_station()
+                if self._sea_primary[CONF_HAS_SEA_OBSERVATIONS]:
+                    return await self.async_step_tidewater_station()
+                return await self.async_step_sea_observation_station()
 
         if not await self._async_load_sea_stations():
             return self.async_show_form(
@@ -126,6 +132,85 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
                             mode=SelectSelectorMode.LIST,
                         )
                     ),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_sea_observation_station(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Confirm the nearest observation source for a prediction-only station."""
+        if self._sea_primary is None:
+            return await self.async_step_sea()
+
+        observation_stations = self._sea_observation_stations()
+        if not observation_stations:
+            return self.async_show_form(
+                step_id="sea_observation_station",
+                data_schema=vol.Schema({}),
+                errors={"base": "no_observation_station"},
+            )
+
+        nearest = self._nearest_sea_observation_station()
+        distance = self._sea_observation_station_distance(nearest)
+        return self.async_show_menu(
+            step_id="sea_observation_station",
+            menu_options=["sea_observation_accept", "sea_observation_change"],
+            description_placeholders={
+                "observation_station_name": str(nearest.get("name") or nearest["stationId"]),
+                "observation_station_id": str(nearest["stationId"]),
+                "distance": f"{distance:.1f}",
+            },
+        )
+
+    async def async_step_sea_observation_accept(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Use the nearest observation-capable sea station."""
+        if self._sea_primary is None:
+            return await self.async_step_sea()
+        if not self._sea_observation_stations():
+            return await self.async_step_sea_observation_station()
+        self._store_sea_observation_station(self._nearest_sea_observation_station())
+        return await self.async_step_tidewater_station()
+
+    async def async_step_sea_observation_change(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Allow selection of a different observation-capable sea station."""
+        if self._sea_primary is None:
+            return await self.async_step_sea()
+
+        observation_stations = self._sea_observation_stations()
+        if not observation_stations:
+            return await self.async_step_sea_observation_station()
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            station = self._get_station_by_id(
+                str(user_input.get(CONF_SEA_OBSERVATION_STATION_ID, "")),
+                stations=observation_stations,
+            )
+            if station is None:
+                errors["base"] = "invalid_station"
+            else:
+                self._store_sea_observation_station(station)
+                return await self.async_step_tidewater_station()
+
+        return self.async_show_form(
+            step_id="sea_observation_change",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_SEA_OBSERVATION_STATION_ID,
+                        default=str(self._nearest_sea_observation_station()["stationId"]),
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=self._build_sea_observation_station_options(),
+                            mode=SelectSelectorMode.LIST,
+                        )
+                    )
                 }
             ),
             errors=errors,
@@ -821,6 +906,71 @@ class DMIConfigFlow(ConfigFlow, domain=DOMAIN):
             )
         except (KeyError, TypeError, ValueError):
             return math.inf
+
+    def _sea_observation_stations(self) -> list[dict[str, Any]]:
+        """Return sea stations capable of supplying observations."""
+        return [
+            station
+            for station in self._sea_stations
+            if station.get(CONF_HAS_SEA_OBSERVATIONS) is True
+        ]
+
+    def _sea_observation_station_distance(self, station: Mapping[str, Any]) -> float:
+        """Return distance from the selected sea location to an observation station."""
+        if self._sea_primary is None:
+            return math.inf
+        try:
+            return self._distance_km(
+                float(self._sea_primary[CONF_LATITUDE]),
+                float(self._sea_primary[CONF_LONGITUDE]),
+                float(station["latitude"]),
+                float(station["longitude"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            return math.inf
+
+    def _nearest_sea_observation_station(self) -> dict[str, Any]:
+        """Return the nearest observation-capable station."""
+        return min(
+            self._sea_observation_stations(),
+            key=self._sea_observation_station_distance,
+        )
+
+    def _store_sea_observation_station(self, station: Mapping[str, Any]) -> None:
+        """Store the selected observation source in the pending sea entry."""
+        if self._sea_primary is None:
+            return
+        station_id = str(station["stationId"])
+        self._sea_primary.update(
+            {
+                CONF_SEA_OBSERVATION_STATION_ID: station_id,
+                CONF_SEA_OBSERVATION_STATION_NAME: str(station.get("name") or station_id),
+                CONF_SEA_OBSERVATION_LATITUDE: station.get("latitude"),
+                CONF_SEA_OBSERVATION_LONGITUDE: station.get("longitude"),
+            }
+        )
+
+    def _build_sea_observation_station_options(self) -> list[dict[str, str]]:
+        """Build observation-source options ordered by proximity."""
+        options: list[dict[str, str]] = []
+        for station in sorted(
+            self._sea_observation_stations(),
+            key=lambda item: (
+                self._sea_observation_station_distance(item),
+                str(item.get("name") or ""),
+            ),
+        ):
+            station_id = str(station["stationId"])
+            station_name = str(station.get("name") or station_id)
+            distance = self._sea_observation_station_distance(station)
+            distance_label = f" — {distance:.1f} km" if math.isfinite(distance) else ""
+            options.append(
+                {
+                    "value": station_id,
+                    "label": f"{station_name} ({station_id}){distance_label}",
+                }
+            )
+        return options
 
     def _nearest_tidewater_station_id(self) -> str:
         """Return the closest prediction station to the selected gauge."""

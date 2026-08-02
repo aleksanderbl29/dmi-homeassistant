@@ -27,6 +27,8 @@ from .const import (
     CONF_INCLUDE_FORECAST,
     CONF_LATITUDE,
     CONF_LONGITUDE,
+    CONF_SEA_OBSERVATION_STATION_ID,
+    CONF_SEA_OBSERVATION_STATION_NAME,
     CONF_SETUP_TYPE,
     CONF_SOURCE_STATION_ID,
     CONF_SOURCE_STATION_NAME,
@@ -98,6 +100,13 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.setup_type: str = str(config_entry.data.get(CONF_SETUP_TYPE) or "normal")
         self.has_sea_observations: bool = bool(
             config_entry.data.get(CONF_HAS_SEA_OBSERVATIONS, True)
+        )
+        self.sea_observation_station_id: str = str(
+            config_entry.data.get(CONF_SEA_OBSERVATION_STATION_ID) or ""
+        )
+        self.sea_observation_station_name: str = str(
+            config_entry.data.get(CONF_SEA_OBSERVATION_STATION_NAME)
+            or self.sea_observation_station_id
         )
         self.tidewater_station_id: str = str(config_entry.data.get(CONF_TIDEWATER_STATION_ID) or "")
         self.backup_stations: list[dict[str, Any]] = list(
@@ -290,17 +299,31 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self.longitude,
                 )
                 # Fetch observations from the configured DMI dataset.
-                if self.setup_type == SETUP_TYPE_SEA and self.has_sea_observations:
-                    primary_observations = await self.api.get_sea_observations(self.station_id)
-                elif self.setup_type == SETUP_TYPE_SEA:
-                    primary_observations = {}
+                if self.setup_type == SETUP_TYPE_SEA:
+                    observation_station_id = self.sea_observation_station_id or (
+                        self.station_id if self.has_sea_observations else ""
+                    )
+                    observation_station_name = self.sea_observation_station_name or (
+                        self.station_name if observation_station_id == self.station_id else ""
+                    )
+                    primary_observations = (
+                        await self.api.get_sea_observations(observation_station_id)
+                        if observation_station_id
+                        else {}
+                    )
                 else:
+                    observation_station_id = self.station_id
+                    observation_station_name = self.station_name
                     primary_observations = await self.api.get_observations(self.station_id)
                 observations = self._annotate_observations(
                     primary_observations,
-                    station_id=self.station_id,
-                    station_name=self.station_name,
-                    source_type=SOURCE_TYPE_PRIMARY,
+                    station_id=observation_station_id,
+                    station_name=observation_station_name,
+                    source_type=(
+                        SOURCE_TYPE_PRIMARY
+                        if observation_station_id == self.station_id
+                        else SOURCE_TYPE_BACKUP
+                    ),
                 )
 
                 if self.setup_type == SETUP_TYPE_ADVANCED:

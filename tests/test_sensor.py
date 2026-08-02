@@ -19,6 +19,10 @@ from custom_components.dmi.const import (
     CONF_BACKUP_STATIONS,
     CONF_LOW_ASTRONOMICAL_TIDE,
     CONF_MEAN_LOW_WATER_SPRING,
+    CONF_SETUP_TYPE,
+    CONF_SOURCE_STATION_ID,
+    CONF_SOURCE_STATION_NAME,
+    CONF_SOURCE_TYPE,
     CONF_STATION_ID,
     CONF_STATION_NAME,
     CONF_TIDEWATER_STATION_ID,
@@ -28,6 +32,7 @@ from custom_components.dmi.const import (
     LAST_FETCH_SENSOR,
     SEA_SENSOR_TYPES,
     SENSOR_TYPES,
+    SETUP_TYPE_SEA,
     TIDEWATER_SENSOR_TYPES,
 )
 from custom_components.dmi.coordinator import DMIDataUpdateCoordinator
@@ -140,6 +145,39 @@ class TestDMISensor:
         assert sensor.name == "Solar Radiation"
         assert sensor.extra_state_attributes["source_type"] == "backup"
         assert "Composite Weather Station" in sensor.device_info["model"]
+
+    def test_prediction_only_sea_sensor_exposes_observation_source(self) -> None:
+        """Test inverse-matched sea readings identify their observation station."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Kyndbyværket Havn",
+            data={
+                CONF_SETUP_TYPE: SETUP_TYPE_SEA,
+                CONF_STATION_ID: "30121",
+                CONF_STATION_NAME: "Kyndbyværket Havn",
+            },
+        )
+        coordinator = MagicMock(spec=DMIDataUpdateCoordinator)
+        coordinator.data = {
+            "observations": {
+                "sea_reg": {
+                    "value": 18.0,
+                    CONF_SOURCE_STATION_ID: "30119",
+                    CONF_SOURCE_STATION_NAME: "Jægerspris Kignæs Havn",
+                    CONF_SOURCE_TYPE: "backup",
+                }
+            },
+            "last_updated": datetime(2026, 8, 2, 9, 35, tzinfo=UTC),
+        }
+        description = next(item for item in SEA_SENSOR_TYPES if item.key == "sea_reg")
+        sensor = DMISensor(coordinator, entry, description)
+
+        attrs = sensor.extra_state_attributes
+
+        assert sensor.native_value == 18.0
+        assert attrs[CONF_SOURCE_STATION_ID] == "30119"
+        assert attrs[CONF_SOURCE_STATION_NAME] == "Jægerspris Kignæs Havn"
+        assert attrs[CONF_SOURCE_TYPE] == "backup"
 
     def test_backup_sourced_name_suffix(
         self,

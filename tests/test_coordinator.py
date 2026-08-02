@@ -23,7 +23,10 @@ from custom_components.dmi.const import (
     CONF_BACKUP_STATIONS,
     CONF_HAS_SEA_OBSERVATIONS,
     CONF_INCLUDE_FORECAST,
+    CONF_SEA_OBSERVATION_STATION_ID,
+    CONF_SEA_OBSERVATION_STATION_NAME,
     CONF_SOURCE_STATION_ID,
+    CONF_SOURCE_STATION_NAME,
     CONF_SOURCE_TYPE,
     CONF_STATION_ID,
     CONF_STATION_NAME,
@@ -244,12 +247,12 @@ class TestDMIDataUpdateCoordinator:
         ]
         mock_api_client.get_forecast.assert_not_called()
 
-    async def test_prediction_only_sea_update_skips_observation_request(
+    async def test_prediction_only_sea_update_fetches_backup_observations(
         self,
         hass: HomeAssistant,
         mock_api_client: MagicMock,
     ) -> None:
-        """Test prediction-only stations do not poll a nonexistent observation gauge."""
+        """Test prediction-only stations fetch and attribute backup observations."""
         entry = MockConfigEntry(
             domain=DOMAIN,
             title="Kyndbyværket Havn",
@@ -259,12 +262,22 @@ class TestDMIDataUpdateCoordinator:
                 CONF_STATION_NAME: "Kyndbyværket Havn",
                 CONF_TIDEWATER_STATION_ID: "30121",
                 CONF_HAS_SEA_OBSERVATIONS: False,
+                CONF_SEA_OBSERVATION_STATION_ID: "30119",
+                CONF_SEA_OBSERVATION_STATION_NAME: "Jægerspris Kignæs Havn",
                 "latitude": 55.8117,
                 "longitude": 11.8773,
             },
             options={CONF_UPDATE_INTERVAL: 10},
         )
         entry.add_to_hass(hass)
+        mock_api_client.get_sea_observations = AsyncMock(
+            return_value={
+                "sea_reg": {
+                    "value": 18.0,
+                    "observed": "2026-08-02T09:30:00Z",
+                }
+            }
+        )
         mock_api_client.get_tidewater_forecast = AsyncMock(return_value=[])
         mock_api_client.get_dkss_forecast = AsyncMock(return_value=None)
         coordinator = DMIDataUpdateCoordinator(hass, entry, mock_api_client)
@@ -275,11 +288,40 @@ class TestDMIDataUpdateCoordinator:
         ):
             data = await coordinator._async_update_data()
 
-        assert data["observations"] == {}
+        sea_level = data["observations"]["sea_reg"]
+        assert sea_level["value"] == 18.0
+        assert sea_level[CONF_SOURCE_STATION_ID] == "30119"
+        assert sea_level[CONF_SOURCE_STATION_NAME] == "Jægerspris Kignæs Havn"
+        assert sea_level[CONF_SOURCE_TYPE] == "backup"
         assert coordinator.has_sea_observations is False
-        mock_api_client.get_sea_observations.assert_not_called()
+        mock_api_client.get_sea_observations.assert_awaited_once_with("30119")
         mock_api_client.get_tidewater_forecast.assert_awaited_once()
         mock_api_client.get_dkss_forecast.assert_awaited_once()
+
+    async def test_legacy_prediction_only_entry_skips_observation_request(
+        self,
+        hass: HomeAssistant,
+        mock_api_client: MagicMock,
+    ) -> None:
+        """Test old prediction-only entries without a source remain compatible."""
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Kyndbyværket Havn",
+            data={
+                "setup_type": "sea",
+                CONF_STATION_ID: "30121",
+                CONF_STATION_NAME: "Kyndbyværket Havn",
+                CONF_HAS_SEA_OBSERVATIONS: False,
+            },
+            options={CONF_UPDATE_INTERVAL: 10},
+        )
+        entry.add_to_hass(hass)
+        coordinator = DMIDataUpdateCoordinator(hass, entry, mock_api_client)
+
+        data = await coordinator._async_update_data()
+
+        assert data["observations"] == {}
+        mock_api_client.get_sea_observations.assert_not_called()
 
     async def test_sea_forecast_rate_limit_keeps_cached_forecasts(
         self,

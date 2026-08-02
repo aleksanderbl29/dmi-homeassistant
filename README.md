@@ -101,9 +101,12 @@ Depending on what the selected station reports, you may get sensors for:
 
 The sea-level setup combines DMI's oceanographic observation and astronomical prediction
 station catalogs. Stations marked as **prediction only** in setup, such as Kyndbyværket,
-do not publish observations through the Open Data API, but can still provide astronomical
-tide predictions and coordinate-based DKSS forecasts. Depending on the selected station,
-the integration creates:
+do not publish observations under their own station ID through the Open Data API. During
+setup, the integration matches the nearest observation-capable sea station and lets you
+accept that source or choose another. The prediction-only location remains the source for
+astronomical tide and coordinate-based DKSS forecasts, while observation sensors identify
+the station that supplied their live data. Depending on the selected station, the integration
+creates:
 
 | Sensor | Unit | Description |
 |--------|------|-------------|
