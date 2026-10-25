@@ -1,3 +1,11 @@
+## [1.5.1](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.5.0...v1.5.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **deps:** patch semantic-release tooling dependencies ([3e2a27d](https://github.com/aleksanderbl29/dmi-homeassistant/commit/3e2a27d6037adb4ec383562554f2bb90e6b30bc3))
+* **manifest:** use Home Assistant provided aiohttp ([4bd2e06](https://github.com/aleksanderbl29/dmi-homeassistant/commit/4bd2e06f7c50772f96e8b6e70bf636393680dcc4))
+
 # [1.5.0](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.4.2...v1.5.0) (2026-08-02)
 
 
