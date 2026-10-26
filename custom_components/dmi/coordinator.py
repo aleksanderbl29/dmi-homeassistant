@@ -65,6 +65,7 @@ DKSS_FORECAST_HOURS = 120
 TIDEWATER_FORECAST_REFRESH_INTERVAL = timedelta(hours=6)
 DKSS_FORECAST_REFRESH_INTERVAL = timedelta(hours=3)
 WEATHER_FORECAST_REFRESH_INTERVAL = timedelta(hours=3)
+WEATHER_FORECAST_RETRY_INTERVAL = timedelta(minutes=1)
 
 
 @dataclass
@@ -146,6 +147,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._dkss_forecast_attempted_at: datetime | None = None
         self._weather_forecast: dict[str, Any] | None = None
         self._weather_forecast_attempted_at: datetime | None = None
+        self._weather_forecast_retry_at: datetime | None = None
 
         # Sensor platform tracks which observation keys already have entities.
         self.known_sensor_keys: set[str] = set()
@@ -404,10 +406,14 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     and self.include_forecast
                     and self.latitude is not None
                     and self.longitude is not None
-                    and self._forecast_refresh_due(
-                        self._weather_forecast_attempted_at,
-                        now,
-                        WEATHER_FORECAST_REFRESH_INTERVAL,
+                    and (
+                        now >= self._weather_forecast_retry_at
+                        if self._weather_forecast_retry_at is not None
+                        else self._forecast_refresh_due(
+                            self._weather_forecast_attempted_at,
+                            now,
+                            WEATHER_FORECAST_REFRESH_INTERVAL,
+                        )
                     )
                 ):
                     await asyncio.sleep(REQUEST_STAGGER_SECONDS)
@@ -417,6 +423,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             self.latitude,
                             self.longitude,
                         )
+                        self._weather_forecast_retry_at = None
                         _LOGGER.debug(
                             "Fetched forecast for %s with %d hourly entries",
                             self.station_id,
@@ -429,6 +436,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         UpstreamError,
                         TimeoutError,
                     ) as err:
+                        self._weather_forecast_retry_at = now + WEATHER_FORECAST_RETRY_INTERVAL
                         _LOGGER.warning(
                             "Failed to refresh weather forecast for %s; "
                             "continuing with cached forecast: %s",
