@@ -1,6 +1,6 @@
 {
   "name": "DMI Weather",
   "country": ["DK", "GL", "FO"],
-  "homeassistant": "2024.1.0"
+  "homeassistant": "2025.12.0"
 }
 
