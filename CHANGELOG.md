@@ -1,3 +1,15 @@
+# [2.0.0](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.5.1...v2.0.0) (2026-10-27)
+
+
+* fix(hacs)!: require Home Assistant 2025.12 or newer ([ada1930](https://github.com/aleksanderbl29/dmi-homeassistant/commit/ada19309db65f2bd383e37c836af869f2cb89ee8))
+
+
+### BREAKING CHANGES
+
+* The minimum supported Home Assistant version increases from
+2024.1.0 to 2025.12.0. Users running older versions must upgrade Home Assistant
+before installing this release.
+
 ## [1.5.1](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.5.0...v1.5.1) (2026-10-25)
 
 
