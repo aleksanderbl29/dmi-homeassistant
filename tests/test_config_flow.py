@@ -9,7 +9,6 @@ import pytest
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dmi.api import CannotConnect
 from custom_components.dmi.config_flow import DMIConfigFlow
@@ -28,6 +27,7 @@ from custom_components.dmi.const import (
     CONF_USE_COORDINATES,
     DOMAIN,
 )
+from tests.ha_test_compat import MockConfigEntry
 
 
 @pytest.fixture

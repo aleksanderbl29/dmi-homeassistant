@@ -212,10 +212,16 @@ Historical jobs limit dependency releases to one week after the Home Assistant
 release, so modern transitive dependencies cannot break an old environment.
 The latest stable job resolves current dependencies.
 
-An experimental job tests Home Assistant's `dev` branch with the latest released
-test plugin. Failures are visible but do not block merging, because unreleased
-Home Assistant changes can also break the released test plugin. CI runs on pull
-requests, pushes to `main` and `dev`, daily, and manually through GitHub Actions.
+An experimental job tests Home Assistant's `dev` branch with the test plugin
+from that same branch. Released compatibility jobs use
+`pytest-homeassistant-custom-component`; the development job uses Home
+Assistant's in-tree `pytest-home-assistant` package because the released plugin
+can lag unreleased core changes. The development test runner imports Home
+Assistant before pytest plugins so its HTTP client compatibility setup runs
+before the `respx` plugin imports `httpx`. Failures remain visible but do not
+block merging because unreleased Home Assistant changes can still break the
+integration. CI runs on pull requests, pushes to `main` and `dev`, daily, and
+manually through GitHub Actions.
 
 Dependabot checks all declared Python dependencies daily. Home Assistant and its
 test plugin share a PR group. Other Python dependencies share a separate group.

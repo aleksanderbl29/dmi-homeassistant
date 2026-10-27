@@ -8,7 +8,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dmi.const import (
     CONF_BACKUP_PARAMETERS,
@@ -21,6 +20,7 @@ from custom_components.dmi.const import (
     CONF_USE_COORDINATES,
     DOMAIN,
 )
+from tests.ha_test_compat import MockConfigEntry
 
 # Sample station data matching actual DMI API GeoJSON response format
 # Based on: https://opendataapi.dmi.dk/v2/metObs/collections/station/items

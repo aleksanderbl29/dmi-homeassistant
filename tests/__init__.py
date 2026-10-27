@@ -1,1 +1,1 @@
-"""Tests for the DMI Weather integration."""
+"""Home Assistant integration tests."""

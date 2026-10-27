@@ -53,7 +53,14 @@ class CompatibilityTests(unittest.TestCase):
         self.assertEqual(sum(line.startswith("homeassistant") for line in dependencies), 1)
 
     def test_development_environment_uses_upstream_source(self):
-        self.assertIn(f"homeassistant @ {DEV_URL}", requirements("dev").splitlines())
+        dependencies = requirements("dev").splitlines()
+        self.assertIn(f"homeassistant @ {DEV_URL}", dependencies)
+        self.assertIn(
+            "pytest-home-assistant @ git+https://github.com/home-assistant/core.git@dev"
+            "#subdirectory=packages/pytest-home-assistant",
+            dependencies,
+        )
+        self.assertNotIn("pytest-homeassistant-custom-component", dependencies)
 
     def test_matrix_separates_historical_current_locked_and_development_jobs(self):
         root = MagicMock()

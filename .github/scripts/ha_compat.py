@@ -100,9 +100,16 @@ def requirements(version: str) -> str:
         name = re.split(r"[<>=!~\[; ]", dependency, maxsplit=1)[0]
         if name == "homeassistant":
             continue
+        if name == "pytest-homeassistant-custom-component" and version == "dev":
+            continue
         # Historical HA fixtures pin their own pytest stack. Resolve matching
         # tooling rather than applying today's test-tool minimums to old HA.
         dependencies.append(name if name.startswith("pytest") else dependency)
+    if version == "dev":
+        dependencies.append(
+            "pytest-home-assistant @ git+https://github.com/home-assistant/core.git@dev"
+            "#subdirectory=packages/pytest-home-assistant"
+        )
     dependencies.append(
         f"homeassistant @ {DEV_URL}" if version == "dev" else f"homeassistant=={version}"
     )
