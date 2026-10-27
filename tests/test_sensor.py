@@ -11,7 +11,6 @@ from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import EntityCategory
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dmi.const import (
     CONF_BACKUP_PARAMETERS,
@@ -42,6 +41,7 @@ from custom_components.dmi.sensor import (
     DMISensor,
     DMITidewaterSensor,
 )
+from tests.ha_test_compat import MockConfigEntry
 
 
 class TestDMISensor:

@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dmi.api import (
     CannotConnect,
@@ -39,6 +38,7 @@ from custom_components.dmi.coordinator import (
     REQUEST_STAGGER_SECONDS,
     DMIDataUpdateCoordinator,
 )
+from tests.ha_test_compat import MockConfigEntry
 
 
 class TestDMIDataUpdateCoordinator:

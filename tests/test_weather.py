@@ -14,11 +14,11 @@ from homeassistant.components.weather import (
 )
 from homeassistant.const import UnitOfPressure, UnitOfSpeed, UnitOfTemperature
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dmi.const import DOMAIN
 from custom_components.dmi.coordinator import DMIDataUpdateCoordinator
 from custom_components.dmi.weather import DMIWeather
+from tests.ha_test_compat import MockConfigEntry
 
 
 class TestDMIWeather:

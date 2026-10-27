@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dmi import PLATFORMS
 from custom_components.dmi.api import RateLimitExceeded
@@ -18,6 +17,7 @@ from custom_components.dmi.const import (
     DOMAIN,
     SETUP_TYPE_SEA,
 )
+from tests.ha_test_compat import MockConfigEntry
 
 
 class TestIntegrationSetup:
