@@ -196,6 +196,57 @@ HTTP 401 or 403 would indicate the wrong hostname or an upstream DMI change, bec
 
 Contributions are welcome! Please feel free to submit issues and pull requests.
 
+### Home Assistant compatibility
+
+The minimum supported Home Assistant version is 2025.12.0, declared in
+`hacs.json`. Raise this minimum when integration changes require newer Home
+Assistant APIs, after checking compatibility.
+
+CI runs the test suite against the exact minimum, two intermediate release
+months, the latest stable release, and the environment recorded in `uv.lock`.
+It selects the intermediate months evenly across the supported range and uses
+their latest patch releases. Each version uses its required Python version and
+a matching `pytest-homeassistant-custom-component` release. Historical tests
+use the pytest versions required by that plugin.
+Historical jobs limit dependency releases to one week after the Home Assistant
+release, so modern transitive dependencies cannot break an old environment.
+The latest stable job resolves current dependencies.
+
+An experimental job tests Home Assistant's `dev` branch with the test plugin
+from that same branch. Released compatibility jobs use
+`pytest-homeassistant-custom-component`; the development job uses Home
+Assistant's in-tree `pytest-home-assistant` package because the released plugin
+can lag unreleased core changes. The development test runner imports Home
+Assistant before pytest plugins so its HTTP client compatibility setup runs
+before the `respx` plugin imports `httpx`. Failures remain visible but do not
+block merging because unreleased Home Assistant changes can still break the
+integration. CI runs on pull requests, pushes to `main` and `dev`, daily, and
+manually through GitHub Actions.
+
+Dependabot checks all declared Python dependencies daily. Home Assistant and its
+test plugin share a PR group. Other Python dependencies share a separate group.
+Updates refresh `uv.lock` and preserve existing minimum requirements when they
+already allow the new version.
+
+Use the Nix development shell for local checks:
+
+```sh
+nix develop -c uv sync --frozen --extra test
+nix develop -c uv run --frozen --extra test pytest tests/
+nix develop -c python .github/scripts/ha_compat.py matrix
+nix develop -c python -m unittest discover -s .github/scripts -p 'test_*.py'
+nix develop -c actionlint .github/workflows/test.yml
+```
+
+To test a selected release in an isolated environment:
+
+```sh
+nix develop -c python .github/scripts/ha_compat.py requirements 2025.12.0 > /tmp/dmi-ha-requirements.txt
+nix develop -c uv venv .venv-compat --python 3.13
+nix develop -c uv pip install --python .venv-compat/bin/python -r /tmp/dmi-ha-requirements.txt --exclude-newer 2025-12-11
+nix develop -c .venv-compat/bin/python -m pytest tests/
+```
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
