@@ -165,6 +165,7 @@ class TestDMIDataUpdateCoordinator:
         assert coordinator._rate_limited_until is None
         assert mock_api_client.get_observations.await_count == 2
         mock_api_client.get_forecast.assert_awaited_once()
+        await coordinator.async_shutdown()
 
     async def test_sea_update_fetches_tidewater_forecast(
         self,

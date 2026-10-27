@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -148,6 +150,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._weather_forecast: dict[str, Any] | None = None
         self._weather_forecast_attempted_at: datetime | None = None
         self._weather_forecast_retry_at: datetime | None = None
+        self._weather_forecast_retry_unsub: Callable[[], None] | None = None
 
         # Sensor platform tracks which observation keys already have entities.
         self.known_sensor_keys: set[str] = set()
@@ -159,6 +162,34 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=update_interval,
             config_entry=config_entry,
         )
+
+    async def async_shutdown(self) -> None:
+        """Cancel pending forecast retries before shutting down the coordinator."""
+        self._cancel_weather_forecast_retry()
+        await super().async_shutdown()
+
+    @callback
+    def _cancel_weather_forecast_retry(self) -> None:
+        """Cancel the pending forecast retry timer, if present."""
+        if self._weather_forecast_retry_unsub is not None:
+            self._weather_forecast_retry_unsub()
+            self._weather_forecast_retry_unsub = None
+
+    @callback
+    def _schedule_weather_forecast_retry(self, retry_at: datetime) -> None:
+        """Request a coordinator refresh when a failed forecast can be retried."""
+        self._cancel_weather_forecast_retry()
+        self._weather_forecast_retry_unsub = async_track_point_in_utc_time(
+            self.hass,
+            self._async_retry_weather_forecast,
+            retry_at,
+        )
+
+    async def _async_retry_weather_forecast(self, _: datetime) -> None:
+        """Refresh coordinator data when the forecast retry deadline arrives."""
+        self._weather_forecast_retry_unsub = None
+        if not self.hass.is_stopping:
+            await self.async_request_refresh()
 
     @property
     def _rate_limited_until(self) -> datetime | None:
@@ -424,6 +455,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             self.longitude,
                         )
                         self._weather_forecast_retry_at = None
+                        self._cancel_weather_forecast_retry()
                         _LOGGER.debug(
                             "Fetched forecast for %s with %d hourly entries",
                             self.station_id,
@@ -437,6 +469,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         TimeoutError,
                     ) as err:
                         self._weather_forecast_retry_at = now + WEATHER_FORECAST_RETRY_INTERVAL
+                        self._schedule_weather_forecast_retry(self._weather_forecast_retry_at)
                         _LOGGER.warning(
                             "Failed to refresh weather forecast for %s; "
                             "continuing with cached forecast: %s",

@@ -14,7 +14,7 @@ from custom_components.dmi.api import (
 )
 from custom_components.dmi.coordinator import DMIDataUpdateCoordinator
 from custom_components.dmi.weather import DMIWeather
-from tests.ha_test_compat import MockConfigEntry
+from tests.ha_test_compat import MockConfigEntry, async_fire_time_changed
 
 
 @pytest.mark.parametrize(
@@ -55,6 +55,42 @@ async def test_failed_forecast_recovers_on_next_observation_update(
     assert cached["forecast"] == recovered
     assert mock_api_client.get_observations.await_count == 4
     assert mock_api_client.get_forecast.await_count == 2
+
+
+async def test_failed_forecast_retries_automatically_after_one_minute(
+    hass: HomeAssistant,
+    freezer,
+    mock_config_entry: MockConfigEntry,
+    mock_api_client: MagicMock,
+) -> None:
+    """Retry a failed forecast at its deadline without waiting for the poll interval."""
+    mock_config_entry.add_to_hass(hass)
+    coordinator = DMIDataUpdateCoordinator(hass, mock_config_entry, mock_api_client)
+    now = datetime(2026, 10, 26, 12, tzinfo=UTC)
+    recovered = {"hourly": [{"datetime": "2026-10-26T14:00:00Z", "temperature": 12}]}
+    mock_api_client.get_forecast = AsyncMock(
+        side_effect=[UpstreamError("temporary failure"), recovered]
+    )
+
+    freezer.move_to(now)
+    try:
+        with patch("custom_components.dmi.coordinator.asyncio.sleep", new_callable=AsyncMock):
+            await coordinator.async_refresh()
+            assert mock_api_client.get_forecast.await_count == 1
+
+            freezer.move_to(now + timedelta(seconds=59))
+            async_fire_time_changed(hass, now + timedelta(seconds=59))
+            await hass.async_block_till_done()
+            assert mock_api_client.get_forecast.await_count == 1
+
+            freezer.move_to(now + timedelta(minutes=1))
+            async_fire_time_changed(hass, now + timedelta(minutes=1))
+            await hass.async_block_till_done()
+
+        assert mock_api_client.get_forecast.await_count == 2
+        assert coordinator.data["forecast"] == recovered
+    finally:
+        await coordinator.async_shutdown()
 
 
 async def test_recovered_forecast_is_delivered_to_existing_subscriber(
