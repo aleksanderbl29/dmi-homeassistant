@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dmi.api import (
     CannotConnect,
@@ -15,6 +14,7 @@ from custom_components.dmi.api import (
 )
 from custom_components.dmi.coordinator import DMIDataUpdateCoordinator
 from custom_components.dmi.weather import DMIWeather
+from tests.ha_test_compat import MockConfigEntry
 
 
 @pytest.mark.parametrize(
