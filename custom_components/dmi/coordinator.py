@@ -151,6 +151,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._weather_forecast_attempted_at: datetime | None = None
         self._weather_forecast_retry_at: datetime | None = None
         self._weather_forecast_rate_limits: int = 0
+        self._weather_forecast_fetching = False
         self._weather_forecast_retry_unsub: Callable[[], None] | None = None
 
         # Sensor platform tracks which observation keys already have entities.
@@ -197,31 +198,53 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if self._weather_forecast_retry_at is None or now < self._weather_forecast_retry_at:
                 return
 
-            try:
-                async with asyncio.timeout(60):
-                    self._weather_forecast_attempted_at = now
-                    self._weather_forecast = await self.api.get_forecast(
-                        self.latitude,
-                        self.longitude,
-                    )
-            except (
-                CannotConnect,
-                RateLimitExceeded,
-                RequestTimeout,
-                UpstreamError,
-                TimeoutError,
-            ) as err:
-                self._record_weather_forecast_failure(err)
-                return
-
-            self._weather_forecast_retry_at = None
-            self._weather_forecast_rate_limits = 0
+            await self._async_fetch_weather_forecast(now, self.latitude, self.longitude)
             if self.data is not None:
                 self.data = {
                     **self.data,
                     "forecast": self._current_weather_forecast(now),
                 }
                 self.async_update_listeners()
+
+    async def _async_fetch_weather_forecast(
+        self, now: datetime, latitude: float, longitude: float
+    ) -> None:
+        """Fetch a forecast while publishing request progress to existing entities."""
+        self._weather_forecast_fetching = True
+        if self.data is not None:
+            self.async_update_listeners()
+        try:
+            async with asyncio.timeout(60):
+                self._weather_forecast_attempted_at = now
+                self._weather_forecast = await self.api.get_forecast(latitude, longitude)
+            self._weather_forecast_retry_at = None
+            self._weather_forecast_rate_limits = 0
+            self._cancel_weather_forecast_retry()
+        except (
+            CannotConnect,
+            RateLimitExceeded,
+            RequestTimeout,
+            UpstreamError,
+            TimeoutError,
+        ) as err:
+            self._record_weather_forecast_failure(err)
+        finally:
+            self._weather_forecast_fetching = False
+
+    @property
+    def weather_forecast_status(self) -> str:
+        """Return forecast progress independently of observation availability."""
+        if self._weather_forecast_fetching:
+            return "fetching"
+        if self._weather_forecast_retry_at is not None:
+            return "retry_scheduled"
+        forecast = self._current_weather_forecast(dt_util.utcnow())
+        return "available" if forecast and forecast.get("hourly") else "no_data"
+
+    @property
+    def weather_forecast_retry_at(self) -> datetime | None:
+        """Return the next scheduled weather forecast retry time."""
+        return self._weather_forecast_retry_at
 
     def _record_weather_forecast_failure(self, err: Exception) -> None:
         """Schedule a forecast retry, backing off when DMI returns HTTP 429."""
@@ -505,28 +528,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     )
                 ):
                     await asyncio.sleep(REQUEST_STAGGER_SECONDS)
-                    self._weather_forecast_attempted_at = now
-                    try:
-                        self._weather_forecast = await self.api.get_forecast(
-                            self.latitude,
-                            self.longitude,
-                        )
-                        self._weather_forecast_retry_at = None
-                        self._weather_forecast_rate_limits = 0
-                        self._cancel_weather_forecast_retry()
-                        _LOGGER.debug(
-                            "Fetched forecast for %s with %d hourly entries",
-                            self.station_id,
-                            len(self._weather_forecast.get("hourly", [])),
-                        )
-                    except (
-                        CannotConnect,
-                        RateLimitExceeded,
-                        RequestTimeout,
-                        UpstreamError,
-                        TimeoutError,
-                    ) as err:
-                        self._record_weather_forecast_failure(err)
+                    await self._async_fetch_weather_forecast(now, self.latitude, self.longitude)
                 forecast = self._current_weather_forecast(now)
 
                 # Success: clear the shared cooldown and its exponential

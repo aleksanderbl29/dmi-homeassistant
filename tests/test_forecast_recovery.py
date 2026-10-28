@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Event, HomeAssistant, callback
 
 from custom_components.dmi.api import (
     CannotConnect,
@@ -237,3 +237,50 @@ async def test_recovered_forecast_is_delivered_to_existing_subscriber(
     finally:
         unsubscribe()
         await entity.async_remove()
+
+
+async def test_forecast_status_entity_shows_retry_progress_and_recovery(
+    hass: HomeAssistant,
+    freezer,
+    mock_config_entry: MockConfigEntry,
+    mock_dmi_api: MagicMock,
+) -> None:
+    """Expose issue #26 retry progress through a real Home Assistant entity."""
+    now = datetime(2026, 10, 26, 12, tzinfo=UTC)
+    retry_at = now + timedelta(minutes=5)
+    recovered = {"hourly": [{"datetime": "2026-10-26T14:00:00Z", "temperature": 12}]}
+    mock_dmi_api.get_forecast = AsyncMock(
+        side_effect=[RateLimitExceeded("busy", retry_at=retry_at), recovered]
+    )
+    entity_id = "sensor.kobenhavns_lufthavn_forecast_status"
+    states: list[str] = []
+
+    @callback
+    def record_status(event: Event) -> None:
+        if event.data["entity_id"] == entity_id and (state := event.data["new_state"]):
+            states.append(state.state)
+
+    unsubscribe = hass.bus.async_listen("state_changed", record_status)
+    freezer.move_to(now)
+    mock_config_entry.add_to_hass(hass)
+    try:
+        with patch("custom_components.dmi.coordinator.asyncio.sleep", new_callable=AsyncMock):
+            assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+            await hass.async_block_till_done()
+            status = hass.states.get(entity_id)
+            assert status is not None
+            assert status.state == "retry_scheduled"
+            assert status.attributes["retry_at"] == retry_at.isoformat()
+            assert hass.states.get("weather.kobenhavns_lufthavn").state == "partlycloudy"
+
+            freezer.move_to(retry_at)
+            async_fire_time_changed(hass, retry_at)
+            await hass.async_block_till_done()
+
+        status = hass.states.get(entity_id)
+        assert status.state == "available"
+        assert status.attributes["retry_at"] is None
+        assert states == ["retry_scheduled", "fetching", "available"]
+    finally:
+        unsubscribe()
+        await hass.config_entries.async_unload(mock_config_entry.entry_id)

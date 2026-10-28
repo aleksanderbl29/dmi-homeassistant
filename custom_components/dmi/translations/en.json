@@ -121,6 +121,15 @@
   },
   "entity": {
     "sensor": {
+      "forecast_status": {
+        "name": "Forecast status",
+        "state": {
+          "fetching": "Fetching",
+          "retry_scheduled": "Retry scheduled",
+          "available": "Available",
+          "no_data": "No forecast data"
+        }
+      },
       "temp_dry": { "name": "Temperature" },
       "temp_dew": { "name": "Dew Point" },
       "temp_mean_past1h": { "name": "Mean Temperature Last Hour" },

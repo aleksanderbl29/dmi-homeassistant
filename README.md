@@ -179,6 +179,13 @@ Some stations (like Pluvio rain gauges) only report specific parameters. Try sel
 
 Forecast requires coordinates. Enable "Use Home Assistant coordinates for forecasts" or ensure the selected station has valid coordinates.
 
+When hourly forecasts are enabled, the DMI device includes a **Forecast status**
+diagnostic sensor. Add it to an Entities card beside your weather card to see
+**Fetching**, **Retry scheduled**, **Available**, or **No forecast data**. Its
+`retry_at` attribute shows the scheduled retry time and clears after recovery.
+The standard Home Assistant forecast popup cannot display this custom status
+and may keep showing a spinner while no forecast is available.
+
 ### Connection errors
 
 Check your internet connection. The integration will automatically retry when connectivity is restored.
@@ -187,6 +194,9 @@ During transient upstream failures, the integration may continue serving cached 
 ### HTTP 429 errors
 
 HTTP 429 means DMI fair-use or rate limiting, not a missing API key. Increase the update interval or wait before retrying.
+When DMI supplies a `Retry-After` response header, the integration waits at least
+that long. Otherwise, repeated forecast 429s back off from one minute to a
+maximum of one hour. Forecast retries do not trigger extra observation requests.
 
 ### HTTP 401 or 403 errors
 
