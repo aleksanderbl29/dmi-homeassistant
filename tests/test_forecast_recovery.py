@@ -139,6 +139,73 @@ async def test_rate_limited_forecast_retry_backs_off_without_refetching_observat
         await coordinator.async_shutdown()
 
 
+@pytest.mark.parametrize("retry_seconds", [30, 600, 7200])
+async def test_forecast_respects_server_retry_deadline(
+    hass: HomeAssistant,
+    freezer,
+    mock_config_entry: MockConfigEntry,
+    mock_api_client: MagicMock,
+    retry_seconds: int,
+) -> None:
+    """Never retry earlier than Retry-After, even beyond our fallback backoff cap."""
+    mock_config_entry.add_to_hass(hass)
+    coordinator = DMIDataUpdateCoordinator(hass, mock_config_entry, mock_api_client)
+    now = datetime(2026, 10, 26, 12, tzinfo=UTC)
+    recovered = {"hourly": [{"datetime": "2026-10-27T14:00:00Z", "temperature": 12}]}
+    mock_api_client.get_forecast = AsyncMock(
+        side_effect=[
+            RateLimitExceeded("busy", retry_at=now + timedelta(seconds=retry_seconds)),
+            recovered,
+        ]
+    )
+    retry_at = now + timedelta(seconds=max(60, retry_seconds))
+
+    freezer.move_to(now)
+    try:
+        with patch("custom_components.dmi.coordinator.asyncio.sleep", new_callable=AsyncMock):
+            await coordinator.async_refresh()
+            freezer.move_to(retry_at - timedelta(seconds=1))
+            async_fire_time_changed(hass, retry_at - timedelta(seconds=1))
+            await hass.async_block_till_done()
+            assert mock_api_client.get_forecast.await_count == 1
+
+            freezer.move_to(retry_at)
+            async_fire_time_changed(hass, retry_at)
+            await hass.async_block_till_done()
+
+        assert mock_api_client.get_forecast.await_count == 2
+        assert mock_api_client.get_observations.await_count == 1
+        assert coordinator.data["forecast"] == recovered
+    finally:
+        await coordinator.async_shutdown()
+
+
+async def test_observations_respect_server_retry_deadline(
+    hass: HomeAssistant,
+    freezer,
+    mock_config_entry: MockConfigEntry,
+    mock_api_client: MagicMock,
+) -> None:
+    """Honor the same server deadline when observations receive HTTP 429."""
+    mock_config_entry.add_to_hass(hass)
+    coordinator = DMIDataUpdateCoordinator(hass, mock_config_entry, mock_api_client)
+    now = datetime(2026, 10, 26, 12, tzinfo=UTC)
+    mock_api_client.get_observations.side_effect = RateLimitExceeded(
+        "busy", retry_at=now + timedelta(hours=2)
+    )
+    freezer.move_to(now)
+    try:
+        await coordinator.async_refresh()
+        freezer.move_to(now + timedelta(hours=1))
+        await coordinator.async_refresh()
+        assert mock_api_client.get_observations.await_count == 1
+        freezer.move_to(now + timedelta(hours=2))
+        await coordinator.async_refresh()
+        assert mock_api_client.get_observations.await_count == 2
+    finally:
+        await coordinator.async_shutdown()
+
+
 async def test_recovered_forecast_is_delivered_to_existing_subscriber(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,

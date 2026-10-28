@@ -178,7 +178,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @callback
     def _schedule_weather_forecast_retry(self, retry_at: datetime) -> None:
-        """Request a coordinator refresh when a failed forecast can be retried."""
+        """Schedule a forecast request when a failed forecast can be retried."""
         self._cancel_weather_forecast_retry()
         self._weather_forecast_retry_unsub = async_track_point_in_utc_time(
             self.hass,
@@ -211,7 +211,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 UpstreamError,
                 TimeoutError,
             ) as err:
-                self._record_weather_forecast_failure(err, now)
+                self._record_weather_forecast_failure(err)
                 return
 
             self._weather_forecast_retry_at = None
@@ -223,7 +223,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 }
                 self.async_update_listeners()
 
-    def _record_weather_forecast_failure(self, err: Exception, now: datetime) -> None:
+    def _record_weather_forecast_failure(self, err: Exception) -> None:
         """Schedule a forecast retry, backing off when DMI returns HTTP 429."""
         if isinstance(err, RateLimitExceeded):
             self._weather_forecast_rate_limits += 1
@@ -236,11 +236,15 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._weather_forecast_rate_limits = 0
             delay = WEATHER_FORECAST_RETRY_INTERVAL
 
-        self._weather_forecast_retry_at = now + delay
+        self._weather_forecast_retry_at = dt_util.utcnow() + delay
+        if isinstance(err, RateLimitExceeded) and err.retry_at is not None:
+            self._weather_forecast_retry_at = max(self._weather_forecast_retry_at, err.retry_at)
         self._schedule_weather_forecast_retry(self._weather_forecast_retry_at)
         _LOGGER.warning(
-            "Failed to refresh weather forecast for %s; continuing with cached forecast: %s",
+            "Failed to refresh weather forecast for %s; retrying at %s; "
+            "continuing with cached forecast: %s",
             self.station_id,
+            self._weather_forecast_retry_at,
             err,
         )
 
@@ -522,7 +526,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         UpstreamError,
                         TimeoutError,
                     ) as err:
-                        self._record_weather_forecast_failure(err, now)
+                        self._record_weather_forecast_failure(err)
                 forecast = self._current_weather_forecast(now)
 
                 # Success: clear the shared cooldown and its exponential
@@ -538,7 +542,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "last_updated": now,
                 }
 
-        except RateLimitExceeded:
+        except RateLimitExceeded as err:
             self._api_state.consecutive_rate_limits += 1
             multiplier = 2 ** (self._api_state.consecutive_rate_limits - 1)
             cooldown = min(
@@ -546,6 +550,8 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 MAX_RATE_LIMIT_COOLDOWN,
             )
             self._rate_limited_until = dt_util.utcnow() + cooldown
+            if err.retry_at is not None:
+                self._rate_limited_until = max(self._rate_limited_until, err.retry_at)
             _LOGGER.warning(
                 "DMI rate limit hit for %s, pausing all DMI updates for %s until %s",
                 self.station_id,
