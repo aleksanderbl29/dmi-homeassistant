@@ -88,6 +88,52 @@ async def test_failed_forecast_retries_automatically_after_one_minute(
             await hass.async_block_till_done()
 
         assert mock_api_client.get_forecast.await_count == 2
+        assert mock_api_client.get_observations.await_count == 1
+        assert coordinator.data["forecast"] == recovered
+    finally:
+        await coordinator.async_shutdown()
+
+
+async def test_rate_limited_forecast_retry_backs_off_without_refetching_observations(
+    hass: HomeAssistant,
+    freezer,
+    mock_config_entry: MockConfigEntry,
+    mock_api_client: MagicMock,
+) -> None:
+    """Back off repeated forecast 429s and keep observation requests on their cadence."""
+    mock_config_entry.add_to_hass(hass)
+    coordinator = DMIDataUpdateCoordinator(hass, mock_config_entry, mock_api_client)
+    now = datetime(2026, 10, 26, 12, tzinfo=UTC)
+    recovered = {"hourly": [{"datetime": "2026-10-26T14:00:00Z", "temperature": 12}]}
+    mock_api_client.get_forecast = AsyncMock(
+        side_effect=[RateLimitExceeded("busy"), RateLimitExceeded("busy"), recovered]
+    )
+
+    freezer.move_to(now)
+    try:
+        with patch("custom_components.dmi.coordinator.asyncio.sleep", new_callable=AsyncMock):
+            await coordinator.async_refresh()
+            assert mock_api_client.get_forecast.await_count == 1
+            assert mock_api_client.get_observations.await_count == 1
+
+            freezer.move_to(now + timedelta(minutes=1))
+            async_fire_time_changed(hass, now + timedelta(minutes=1))
+            await hass.async_block_till_done()
+            assert mock_api_client.get_forecast.await_count == 2
+            assert mock_api_client.get_observations.await_count == 1
+
+            freezer.move_to(now + timedelta(minutes=2))
+            async_fire_time_changed(hass, now + timedelta(minutes=2))
+            await hass.async_block_till_done()
+            assert mock_api_client.get_forecast.await_count == 2
+            assert mock_api_client.get_observations.await_count == 1
+
+            freezer.move_to(now + timedelta(minutes=3))
+            async_fire_time_changed(hass, now + timedelta(minutes=3))
+            await hass.async_block_till_done()
+
+        assert mock_api_client.get_forecast.await_count == 3
+        assert mock_api_client.get_observations.await_count == 1
         assert coordinator.data["forecast"] == recovered
     finally:
         await coordinator.async_shutdown()
