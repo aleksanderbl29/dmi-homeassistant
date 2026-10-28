@@ -68,6 +68,7 @@ TIDEWATER_FORECAST_REFRESH_INTERVAL = timedelta(hours=6)
 DKSS_FORECAST_REFRESH_INTERVAL = timedelta(hours=3)
 WEATHER_FORECAST_REFRESH_INTERVAL = timedelta(hours=3)
 WEATHER_FORECAST_RETRY_INTERVAL = timedelta(minutes=1)
+MAX_UNAVAILABLE_FORECAST_RETRY_INTERVAL = timedelta(minutes=5)
 
 
 @dataclass
@@ -279,18 +280,24 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Schedule a forecast retry, backing off when DMI returns HTTP 429."""
         if self._shutdown_requested or self.hass.is_stopping:
             return
+        now = dt_util.utcnow()
         if isinstance(err, RateLimitExceeded):
             self._weather_forecast_rate_limits += 1
             multiplier = 2 ** (self._weather_forecast_rate_limits - 1)
-            delay = min(
-                WEATHER_FORECAST_RETRY_INTERVAL * multiplier,
-                MAX_RATE_LIMIT_COOLDOWN,
+            cached_forecast = self._current_weather_forecast(now)
+            retry_cap = (
+                MAX_RATE_LIMIT_COOLDOWN
+                if cached_forecast and cached_forecast.get("hourly")
+                else MAX_UNAVAILABLE_FORECAST_RETRY_INTERVAL
+            )
+            delay = WEATHER_FORECAST_RETRY_INTERVAL * min(
+                multiplier, retry_cap // WEATHER_FORECAST_RETRY_INTERVAL
             )
         else:
             self._weather_forecast_rate_limits = 0
             delay = WEATHER_FORECAST_RETRY_INTERVAL
 
-        self._weather_forecast_retry_at = dt_util.utcnow() + delay
+        self._weather_forecast_retry_at = now + delay
         if isinstance(err, RateLimitExceeded) and err.retry_at is not None:
             self._weather_forecast_retry_at = max(self._weather_forecast_retry_at, err.retry_at)
         self._schedule_weather_forecast_retry(self._weather_forecast_retry_at)

@@ -139,6 +139,73 @@ async def test_rate_limited_forecast_retry_backs_off_without_refetching_observat
         await coordinator.async_shutdown()
 
 
+@pytest.mark.parametrize("cache_state", ["missing", "empty", "expired", "available"])
+async def test_forecast_backoff_cap_depends_on_usable_cache(
+    hass: HomeAssistant,
+    freezer,
+    mock_config_entry: MockConfigEntry,
+    mock_api_client: MagicMock,
+    cache_state: str,
+) -> None:
+    """Issue #26 recovery stays responsive when no unexpired forecast is available."""
+    mock_config_entry.add_to_hass(hass)
+    coordinator = DMIDataUpdateCoordinator(hass, mock_config_entry, mock_api_client)
+    now = datetime(2026, 10, 26, 12, tzinfo=UTC)
+    freezer.move_to(now)
+    try:
+        with patch("custom_components.dmi.coordinator.asyncio.sleep", new_callable=AsyncMock):
+            if cache_state != "missing":
+                forecast_time = now + timedelta(hours=1 if cache_state == "expired" else 48)
+                mock_api_client.get_forecast.return_value = {
+                    "hourly": []
+                    if cache_state == "empty"
+                    else [{"datetime": forecast_time.isoformat(), "temperature": 12}]
+                }
+                await coordinator.async_refresh()
+                now += timedelta(hours=3)
+                freezer.move_to(now)
+                mock_api_client.get_forecast.reset_mock()
+
+            mock_api_client.get_forecast.side_effect = RateLimitExceeded("busy")
+            await coordinator.async_refresh()
+        observation_requests = mock_api_client.get_observations.await_count
+        cap = 60 if cache_state == "available" else 5
+
+        for attempt in range(10):
+            retry_at = now + timedelta(minutes=min(2**attempt, cap))
+            assert coordinator.weather_forecast_retry_at == retry_at
+            freezer.move_to(retry_at - timedelta(seconds=1))
+            async_fire_time_changed(hass, retry_at - timedelta(seconds=1))
+            await hass.async_block_till_done()
+            assert mock_api_client.get_forecast.await_count == attempt + 1
+
+            freezer.move_to(retry_at)
+            async_fire_time_changed(hass, retry_at)
+            await hass.async_block_till_done()
+            assert mock_api_client.get_forecast.await_count == attempt + 2
+            assert mock_api_client.get_observations.await_count == observation_requests
+            now = retry_at
+
+        recovered = {"hourly": [{"datetime": "2026-10-28T12:00:00Z", "temperature": 12}]}
+        mock_api_client.get_forecast.side_effect = None
+        mock_api_client.get_forecast.return_value = recovered
+        retry_at = coordinator.weather_forecast_retry_at
+        freezer.move_to(retry_at)
+        async_fire_time_changed(hass, retry_at)
+        await hass.async_block_till_done()
+        assert coordinator.data["forecast"] == recovered
+        assert coordinator.weather_forecast_retry_at is None
+
+        now = retry_at + timedelta(hours=3)
+        freezer.move_to(now)
+        mock_api_client.get_forecast.side_effect = RateLimitExceeded("busy")
+        with patch("custom_components.dmi.coordinator.asyncio.sleep", new_callable=AsyncMock):
+            await coordinator.async_refresh()
+        assert coordinator.weather_forecast_retry_at == now + timedelta(minutes=1)
+    finally:
+        await coordinator.async_shutdown()
+
+
 @pytest.mark.parametrize("retry_seconds", [30, 600, 7200])
 async def test_forecast_respects_server_retry_deadline(
     hass: HomeAssistant,

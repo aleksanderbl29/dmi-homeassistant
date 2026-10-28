@@ -196,7 +196,9 @@ During transient upstream failures, the integration may continue serving cached 
 HTTP 429 means DMI fair-use or rate limiting, not a missing API key. Increase the update interval or wait before retrying.
 When DMI supplies a `Retry-After` response header, the integration waits at least
 that long. Otherwise, repeated forecast 429s back off from one minute to a
-maximum of one hour. Forecast retries do not trigger extra observation requests.
+maximum of five minutes while no unexpired forecast is available, or one hour
+while usable cached forecast data remains. Forecast retries do not trigger
+extra observation requests.
 
 ### HTTP 401 or 403 errors
 
