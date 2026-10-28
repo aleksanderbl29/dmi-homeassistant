@@ -198,6 +198,12 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if self._weather_forecast_retry_at is None or now < self._weather_forecast_retry_at:
                 return
 
+            if self._rate_limited_until is not None and now < self._rate_limited_until:
+                self._weather_forecast_retry_at = self._rate_limited_until
+                self._schedule_weather_forecast_retry(self._weather_forecast_retry_at)
+                self.async_update_listeners()
+                return
+
             await self._async_fetch_weather_forecast(now, self.latitude, self.longitude)
             if self.data is not None:
                 self.data = {

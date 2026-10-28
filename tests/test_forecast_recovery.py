@@ -284,3 +284,42 @@ async def test_forecast_status_entity_shows_retry_progress_and_recovery(
     finally:
         unsubscribe()
         await hass.config_entries.async_unload(mock_config_entry.entry_id)
+
+
+async def test_forecast_retry_waits_for_shared_observation_cooldown(
+    hass: HomeAssistant,
+    freezer,
+    mock_config_entry: MockConfigEntry,
+    mock_api_client: MagicMock,
+) -> None:
+    """Issue #26 retries must honor a later 429 received by another DMI entry."""
+    mock_config_entry.add_to_hass(hass)
+    coordinator = DMIDataUpdateCoordinator(hass, mock_config_entry, mock_api_client)
+    other_entry = DMIDataUpdateCoordinator(hass, mock_config_entry, mock_api_client)
+    now = datetime(2026, 10, 26, 12, tzinfo=UTC)
+    recovered = {"hourly": [{"datetime": "2026-10-26T14:00:00Z", "temperature": 12}]}
+    mock_api_client.get_forecast.side_effect = [UpstreamError("busy"), recovered]
+    freezer.move_to(now)
+    try:
+        with patch("custom_components.dmi.coordinator.asyncio.sleep", new_callable=AsyncMock):
+            await coordinator.async_refresh()
+        freezer.move_to(now + timedelta(seconds=30))
+        mock_api_client.get_observations.side_effect = RateLimitExceeded(
+            "busy", retry_at=now + timedelta(minutes=5)
+        )
+        await other_entry.async_refresh()
+
+        freezer.move_to(now + timedelta(minutes=1))
+        async_fire_time_changed(hass, now + timedelta(minutes=1))
+        await hass.async_block_till_done()
+        assert mock_api_client.get_forecast.await_count == 1
+        assert coordinator.weather_forecast_retry_at == now + timedelta(minutes=5)
+
+        freezer.move_to(now + timedelta(minutes=5))
+        async_fire_time_changed(hass, now + timedelta(minutes=5))
+        await hass.async_block_till_done()
+        assert mock_api_client.get_forecast.await_count == 2
+        assert coordinator.data["forecast"] == recovered
+    finally:
+        await coordinator.async_shutdown()
+        await other_entry.async_shutdown()
