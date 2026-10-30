@@ -18,7 +18,7 @@ from homeassistant.const import (
     UnitOfSpeed,
     UnitOfTemperature,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -89,6 +89,15 @@ class DMIWeather(CoordinatorEntity[DMIDataUpdateCoordinator], WeatherEntity):
                 getattr(coordinator, "include_forecast", None),
                 getattr(coordinator, "latitude", None),
                 getattr(coordinator, "longitude", None),
+            )
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Publish refreshed forecasts to Home Assistant's weather subscribers."""
+        super()._handle_coordinator_update()
+        if self._supports_forecast:
+            self._config_entry.async_create_task(
+                self.hass, self.async_update_listeners(("hourly",))
             )
 
     @property

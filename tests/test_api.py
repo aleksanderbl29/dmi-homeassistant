@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1070,6 +1070,44 @@ class TestDMIApiClient:
 
         with pytest.raises(RateLimitExceeded, match="Server is busy"):
             await api_client.get_stations()
+
+    @pytest.mark.parametrize(
+        ("header", "seconds"),
+        [
+            ("300", 300),
+            ("0", 0),
+            ("Wed, 28 Oct 2026 12:10:00 GMT", 600),
+            (None, None),
+            ("invalid", None),
+            ("-1", None),
+            ("1.5", None),
+            ("Wed, 28 Oct 2026 11:00:00 GMT", None),
+            ("9" * 100, None),
+        ],
+    )
+    async def test_rate_limit_preserves_retry_after(
+        self,
+        api_client: DMIApiClient,
+        freezer,
+        header: str | None,
+        seconds: int | None,
+    ) -> None:
+        """Preserve valid server retry deadlines and ignore malformed headers."""
+        now = datetime(2026, 10, 28, 12, tzinfo=UTC)
+        freezer.move_to(now)
+        response = AsyncMock()
+        response.status = 429
+        response.text.return_value = "Server is busy"
+        response.headers = {"Retry-After": header} if header is not None else {}
+        context = AsyncMock()
+        context.__aenter__.return_value = response
+        api_client._session.get = MagicMock(return_value=context)
+
+        with pytest.raises(RateLimitExceeded) as raised:
+            await api_client.get_stations()
+
+        expected = now + timedelta(seconds=seconds) if seconds is not None else None
+        assert raised.value.retry_at == expected
 
     async def test_http_error_status_includes_response_body(
         self,

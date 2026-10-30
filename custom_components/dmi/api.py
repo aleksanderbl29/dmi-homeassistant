@@ -6,7 +6,8 @@ import asyncio
 import logging
 import math
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import aiohttp
@@ -33,6 +34,31 @@ class RequestTimeout(CannotConnect):
 
 class RateLimitExceeded(Exception):
     """Error to indicate rate limit exceeded."""
+
+    def __init__(self, message: str, *, retry_at: datetime | None = None) -> None:
+        """Preserve the server's earliest permitted retry time, when supplied."""
+        super().__init__(message)
+        self.retry_at = retry_at
+
+
+def _retry_after_deadline(headers: Mapping[str, str] | None) -> datetime | None:
+    """Parse Retry-After seconds or an HTTP date at the response boundary."""
+    if not isinstance(headers, Mapping):
+        return None
+    value = headers.get("Retry-After")
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    now = datetime.now(UTC)
+    try:
+        if value.isascii() and value.isdecimal():
+            return now + timedelta(seconds=int(value))
+        deadline = parsedate_to_datetime(value)
+        if deadline.tzinfo is not None and deadline >= now:
+            return deadline.astimezone(UTC)
+    except (ValueError, TypeError, OverflowError):
+        pass
+    return None
 
 
 class DMIApiClient:
@@ -120,7 +146,8 @@ class DMIApiClient:
                     detail = self._truncate_error_text(response_text)
                     raise RateLimitExceeded(
                         "DMI API returned HTTP 429"
-                        + (f": {detail}" if detail else " (too many requests or server busy)")
+                        + (f": {detail}" if detail else " (too many requests or server busy)"),
+                        retry_at=_retry_after_deadline(response.headers),
                     )
                 if response.status >= 400:
                     response_text = await response.text()
@@ -157,7 +184,10 @@ class DMIApiClient:
             raise UpstreamError(f"Invalid JSON response from DMI API: {err}") from err
         except aiohttp.ClientResponseError as err:
             if err.status == 429:
-                raise RateLimitExceeded("DMI API rate limit exceeded") from err
+                raise RateLimitExceeded(
+                    "DMI API rate limit exceeded",
+                    retry_at=_retry_after_deadline(err.headers),
+                ) from err
             _LOGGER.error("DMI API response error (HTTP %s): %s", err.status, err)
             raise UpstreamError(f"HTTP {err.status} error from DMI API: {err}") from err
         except aiohttp.ClientError as err:

@@ -121,6 +121,15 @@
   },
   "entity": {
     "sensor": {
+      "forecast_status": {
+        "name": "Prognosestatus",
+        "state": {
+          "fetching": "Henter",
+          "retry_scheduled": "Nyt forsøg planlagt",
+          "available": "Tilgængelig",
+          "no_data": "Ingen prognosedata"
+        }
+      },
       "temp_dry": { "name": "Temperatur" },
       "temp_dew": { "name": "Dugpunkt" },
       "temp_mean_past1h": { "name": "Middeltemperatur seneste time" },

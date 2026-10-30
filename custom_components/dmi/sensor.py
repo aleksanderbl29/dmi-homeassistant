@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorEntityDescription
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -55,12 +56,18 @@ async def async_setup_entry(
     observations = coordinator.data.get("observations", {}) if coordinator.data else {}
     coordinator.known_sensor_keys = set(observations.keys())
 
-    entities: list[DMISensor | DMITidewaterSensor | DMIDKSSForecastSensor | DMILastFetchSensor] = [
+    entities: list[DMIBaseSensor] = [
         DMILastFetchSensor(
             coordinator=coordinator,
             config_entry=config_entry,
         )
     ]
+    if (
+        coordinator.include_forecast
+        and coordinator.latitude is not None
+        and coordinator.longitude is not None
+    ):
+        entities.append(DMIForecastStatusSensor(coordinator, config_entry))
     for description in sensor_types:
         if description.key in coordinator.known_sensor_keys:
             entities.append(
@@ -434,6 +441,36 @@ class DMIDKSSForecastSensor(DMIBaseSensor):
             if isinstance(last_updated, datetime):
                 attributes["last_updated"] = last_updated.isoformat()
         return {key: value for key, value in attributes.items() if value is not None}
+
+
+class DMIForecastStatusSensor(DMIBaseSensor):
+    """Show forecast progress and the scheduled retry independently of observations."""
+
+    _attr_translation_key = "forecast_status"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["fetching", "retry_scheduled", "available", "no_data"]
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:weather-clock"
+
+    def __init__(
+        self,
+        coordinator: DMIDataUpdateCoordinator,
+        config_entry: ConfigEntry,
+    ) -> None:
+        """Initialize the forecast status sensor."""
+        super().__init__(coordinator, config_entry)
+        self._attr_unique_id = f"{config_entry.entry_id}_forecast_status"
+
+    @property
+    def native_value(self) -> str:
+        """Return the forecast fetch state."""
+        return self.coordinator.weather_forecast_status
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the next retry time for display in dashboards and entity details."""
+        retry_at = self.coordinator.weather_forecast_retry_at
+        return {"retry_at": retry_at.isoformat() if retry_at else None}
 
 
 class DMILastFetchSensor(DMIBaseSensor):

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -65,6 +67,8 @@ DKSS_FORECAST_HOURS = 120
 TIDEWATER_FORECAST_REFRESH_INTERVAL = timedelta(hours=6)
 DKSS_FORECAST_REFRESH_INTERVAL = timedelta(hours=3)
 WEATHER_FORECAST_REFRESH_INTERVAL = timedelta(hours=3)
+WEATHER_FORECAST_RETRY_INTERVAL = timedelta(minutes=1)
+MAX_UNAVAILABLE_FORECAST_RETRY_INTERVAL = timedelta(minutes=5)
 
 
 @dataclass
@@ -146,6 +150,11 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._dkss_forecast_attempted_at: datetime | None = None
         self._weather_forecast: dict[str, Any] | None = None
         self._weather_forecast_attempted_at: datetime | None = None
+        self._weather_forecast_retry_at: datetime | None = None
+        self._weather_forecast_rate_limits: int = 0
+        self._weather_forecast_fetching = False
+        self._weather_forecast_retry_unsub: Callable[[], None] | None = None
+        self._weather_forecast_retry_tasks: set[asyncio.Task[None]] = set()
 
         # Sensor platform tracks which observation keys already have entities.
         self.known_sensor_keys: set[str] = set()
@@ -156,6 +165,148 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             name=f"{DOMAIN} ({self.station_name})",
             update_interval=update_interval,
             config_entry=config_entry,
+        )
+
+    async def async_shutdown(self) -> None:
+        """Cancel scheduled and in-flight forecast retries when unloading the entry."""
+        await super().async_shutdown()
+        self._cancel_weather_forecast_retry()
+        pending = self._weather_forecast_retry_tasks - {asyncio.current_task()}
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        self._weather_forecast_retry_at = None
+
+    @callback
+    def _cancel_weather_forecast_retry(self) -> None:
+        """Cancel the pending forecast retry timer, if present."""
+        if self._weather_forecast_retry_unsub is not None:
+            self._weather_forecast_retry_unsub()
+            self._weather_forecast_retry_unsub = None
+
+    @callback
+    def _schedule_weather_forecast_retry(self, retry_at: datetime) -> None:
+        """Schedule a forecast request when a failed forecast can be retried."""
+        self._cancel_weather_forecast_retry()
+        if self._shutdown_requested or self.hass.is_stopping:
+            return
+        self._weather_forecast_retry_unsub = async_track_point_in_utc_time(
+            self.hass,
+            self._async_retry_weather_forecast,
+            retry_at,
+        )
+
+    async def _async_retry_weather_forecast(self, _: datetime) -> None:
+        """Retry only the failed forecast when its deadline arrives."""
+        self._weather_forecast_retry_unsub = None
+        if (
+            self._shutdown_requested
+            or self.hass.is_stopping
+            or self.latitude is None
+            or self.longitude is None
+        ):
+            return
+
+        task = asyncio.current_task()
+        if task is not None:
+            self._weather_forecast_retry_tasks.add(task)
+        try:
+            async with self._api_state.update_lock:
+                if self._shutdown_requested or self.hass.is_stopping:
+                    return
+                now = dt_util.utcnow()
+                if self._weather_forecast_retry_at is None or now < self._weather_forecast_retry_at:
+                    return
+
+                if self._rate_limited_until is not None and now < self._rate_limited_until:
+                    self._weather_forecast_retry_at = self._rate_limited_until
+                    self._schedule_weather_forecast_retry(self._weather_forecast_retry_at)
+                    self.async_update_listeners()
+                    return
+
+                await self._async_fetch_weather_forecast(now, self.latitude, self.longitude)
+                if self.data is not None:
+                    self.data = {
+                        **self.data,
+                        "forecast": self._current_weather_forecast(now),
+                    }
+                    self.async_update_listeners()
+        finally:
+            if task is not None:
+                self._weather_forecast_retry_tasks.discard(task)
+
+    async def _async_fetch_weather_forecast(
+        self, now: datetime, latitude: float, longitude: float
+    ) -> None:
+        """Fetch a forecast while publishing request progress to existing entities."""
+        self._weather_forecast_fetching = True
+        if self.data is not None:
+            self.async_update_listeners()
+        try:
+            async with asyncio.timeout(60):
+                self._weather_forecast_attempted_at = now
+                self._weather_forecast = await self.api.get_forecast(latitude, longitude)
+            self._weather_forecast_retry_at = None
+            self._weather_forecast_rate_limits = 0
+            self._cancel_weather_forecast_retry()
+        except (
+            CannotConnect,
+            RateLimitExceeded,
+            RequestTimeout,
+            UpstreamError,
+            TimeoutError,
+        ) as err:
+            self._record_weather_forecast_failure(err)
+        finally:
+            self._weather_forecast_fetching = False
+
+    @property
+    def weather_forecast_status(self) -> str:
+        """Return forecast progress independently of observation availability."""
+        if self._weather_forecast_fetching:
+            return "fetching"
+        if self._weather_forecast_retry_at is not None:
+            return "retry_scheduled"
+        forecast = self._current_weather_forecast(dt_util.utcnow())
+        return "available" if forecast and forecast.get("hourly") else "no_data"
+
+    @property
+    def weather_forecast_retry_at(self) -> datetime | None:
+        """Return the next scheduled weather forecast retry time."""
+        return self._weather_forecast_retry_at
+
+    def _record_weather_forecast_failure(self, err: Exception) -> None:
+        """Schedule a forecast retry, backing off when DMI returns HTTP 429."""
+        if self._shutdown_requested or self.hass.is_stopping:
+            return
+        now = dt_util.utcnow()
+        if isinstance(err, RateLimitExceeded):
+            self._weather_forecast_rate_limits += 1
+            multiplier = 2 ** (self._weather_forecast_rate_limits - 1)
+            cached_forecast = self._current_weather_forecast(now)
+            retry_cap = (
+                MAX_RATE_LIMIT_COOLDOWN
+                if cached_forecast and cached_forecast.get("hourly")
+                else MAX_UNAVAILABLE_FORECAST_RETRY_INTERVAL
+            )
+            delay = WEATHER_FORECAST_RETRY_INTERVAL * min(
+                multiplier, retry_cap // WEATHER_FORECAST_RETRY_INTERVAL
+            )
+        else:
+            self._weather_forecast_rate_limits = 0
+            delay = WEATHER_FORECAST_RETRY_INTERVAL
+
+        self._weather_forecast_retry_at = now + delay
+        if isinstance(err, RateLimitExceeded) and err.retry_at is not None:
+            self._weather_forecast_retry_at = max(self._weather_forecast_retry_at, err.retry_at)
+        self._schedule_weather_forecast_retry(self._weather_forecast_retry_at)
+        _LOGGER.warning(
+            "Failed to refresh weather forecast for %s; retrying at %s; "
+            "continuing with cached forecast: %s",
+            self.station_id,
+            self._weather_forecast_retry_at,
+            err,
         )
 
     @property
@@ -404,37 +555,18 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     and self.include_forecast
                     and self.latitude is not None
                     and self.longitude is not None
-                    and self._forecast_refresh_due(
-                        self._weather_forecast_attempted_at,
-                        now,
-                        WEATHER_FORECAST_REFRESH_INTERVAL,
+                    and (
+                        now >= self._weather_forecast_retry_at
+                        if self._weather_forecast_retry_at is not None
+                        else self._forecast_refresh_due(
+                            self._weather_forecast_attempted_at,
+                            now,
+                            WEATHER_FORECAST_REFRESH_INTERVAL,
+                        )
                     )
                 ):
                     await asyncio.sleep(REQUEST_STAGGER_SECONDS)
-                    self._weather_forecast_attempted_at = now
-                    try:
-                        self._weather_forecast = await self.api.get_forecast(
-                            self.latitude,
-                            self.longitude,
-                        )
-                        _LOGGER.debug(
-                            "Fetched forecast for %s with %d hourly entries",
-                            self.station_id,
-                            len(self._weather_forecast.get("hourly", [])),
-                        )
-                    except (
-                        CannotConnect,
-                        RateLimitExceeded,
-                        RequestTimeout,
-                        UpstreamError,
-                        TimeoutError,
-                    ) as err:
-                        _LOGGER.warning(
-                            "Failed to refresh weather forecast for %s; "
-                            "continuing with cached forecast: %s",
-                            self.station_id,
-                            err,
-                        )
+                    await self._async_fetch_weather_forecast(now, self.latitude, self.longitude)
                 forecast = self._current_weather_forecast(now)
 
                 # Success: clear the shared cooldown and its exponential
@@ -450,7 +582,7 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "last_updated": now,
                 }
 
-        except RateLimitExceeded:
+        except RateLimitExceeded as err:
             self._api_state.consecutive_rate_limits += 1
             multiplier = 2 ** (self._api_state.consecutive_rate_limits - 1)
             cooldown = min(
@@ -458,6 +590,8 @@ class DMIDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 MAX_RATE_LIMIT_COOLDOWN,
             )
             self._rate_limited_until = dt_util.utcnow() + cooldown
+            if err.retry_at is not None:
+                self._rate_limited_until = max(self._rate_limited_until, err.retry_at)
             _LOGGER.warning(
                 "DMI rate limit hit for %s, pausing all DMI updates for %s until %s",
                 self.station_id,
