@@ -1,3 +1,10 @@
+## [2.0.1](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v2.0.0...v2.0.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* **weather:** retry failed forecasts and notify subscribers ([#28](https://github.com/aleksanderbl29/dmi-homeassistant/issues/28)) ([f654706](https://github.com/aleksanderbl29/dmi-homeassistant/commit/f654706bdac67d263d8f2ff7a138d505288c1a17))
+
 # [2.0.0](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v1.5.1...v2.0.0) (2026-10-27)
 
 
