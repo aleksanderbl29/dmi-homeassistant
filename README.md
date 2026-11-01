@@ -169,10 +169,10 @@ The integration remains API-key-free by default. Authenticated DMI sources must 
 
 The API has rate limits. The default update interval of 10 minutes should be well within limits for normal use.
 
-All DMI API clients in the Home Assistant instance share request pacing, with
-at least 1.1 seconds between request starts, including station setup requests.
-Weather forecast queries request a bounded range through seven days ahead,
-including the preceding hour needed to calculate hourly precipitation.
+The integration waits at least 1.1 seconds between DMI request starts across
+all its API clients, including requests during station setup. Weather forecast
+queries cover the previous hour through seven days ahead. The previous hour's
+rainfall total is needed to calculate hourly precipitation.
 
 ## Troubleshooting
 

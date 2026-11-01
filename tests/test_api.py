@@ -32,7 +32,7 @@ class TestDMIApiClient:
         return DMIApiClient(session)
 
     async def test_concurrent_clients_space_outbound_requests(self) -> None:
-        """Station, observation and forecast requests share one pacing queue."""
+        """Requests from different clients start at least 1.1 seconds apart."""
         starts: list[float] = []
         response = AsyncMock()
         response.status = 200
@@ -88,7 +88,7 @@ class TestDMIApiClient:
     async def test_forecast_bounds_preserve_precipitation_baseline(
         self, api_client: DMIApiClient, freezer
     ) -> None:
-        """Keep a previous accumulation while bounding the forecast horizon."""
+        """The time range includes the rainfall total needed for hourly amounts."""
         freezer.move_to(datetime(2026, 10, 30, 12, 37, tzinfo=UTC))
         api_client._request = AsyncMock(
             return_value={

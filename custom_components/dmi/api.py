@@ -21,7 +21,7 @@ _LOGGER = logging.getLogger(__name__)
 AUTH_PARAM_NAMES = frozenset({"api-key", "apikey", "token"})
 PAGE_SIZE = 1000
 OBSERVATION_PAGE_SIZE = 100
-# Request pacing and bounded weather queries are adapted from dchansen's fork:
+# The request spacing and forecast time limits follow dchansen's fork.
 # https://github.com/dchansen/dmi-homeassistant/tree/ac0578d1b7a62dd713a782dcf91aee3c952991c6
 MIN_REQUEST_INTERVAL = 1.1
 
@@ -610,7 +610,7 @@ class DMIApiClient:
         coords = f"POINT({longitude} {latitude})"
 
         now = datetime.now(UTC)
-        # Retain the preceding hourly accumulation for precipitation differences.
+        # Include the previous hour's rainfall total to calculate hourly amounts.
         start = now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
         params = {
             # DMI Forecast EDR position queries document coords, crs, parameter-name and f:

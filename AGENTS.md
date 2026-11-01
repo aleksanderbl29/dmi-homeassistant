@@ -1,6 +1,6 @@
 # Development
 
-Use the locked Nix development shell for project tooling. Wrap each command in
+Run development commands in the locked Nix shell. Prefix each command with
 `nix develop -c`, or enter `nix develop` for an interactive session.
 
 - Install dependencies: `nix develop -c uv sync --locked --extra test --extra dev`
