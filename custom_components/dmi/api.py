@@ -21,6 +21,8 @@ _LOGGER = logging.getLogger(__name__)
 AUTH_PARAM_NAMES = frozenset({"api-key", "apikey", "token"})
 PAGE_SIZE = 1000
 OBSERVATION_PAGE_SIZE = 100
+# Request pacing and bounded weather queries are adapted from dchansen's fork:
+# https://github.com/dchansen/dmi-homeassistant/tree/ac0578d1b7a62dd713a782dcf91aee3c952991c6
 MIN_REQUEST_INTERVAL = 1.1
 
 
