@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -29,6 +30,89 @@ class TestDMIApiClient:
         """Create an API client with a mock session."""
         session = MagicMock(spec=aiohttp.ClientSession)
         return DMIApiClient(session)
+
+    async def test_concurrent_clients_space_outbound_requests(self) -> None:
+        """Station, observation and forecast requests share one pacing queue."""
+        starts: list[float] = []
+        response = AsyncMock()
+        response.status = 200
+        response.json.return_value = {}
+        response.raise_for_status = MagicMock()
+        context = AsyncMock()
+        context.__aenter__.return_value = response
+
+        def request(*args, **kwargs):
+            starts.append(time.monotonic())
+            return context
+
+        clients = [DMIApiClient(MagicMock(spec=aiohttp.ClientSession)) for _ in range(3)]
+        for client in clients:
+            client._session.get.side_effect = request
+
+        await asyncio.gather(
+            clients[0].get_stations(),
+            clients[1].get_observations("06180"),
+            clients[2].get_forecast(55.6761, 12.5683),
+        )
+
+        assert len(starts) == 3
+        assert all(
+            later - earlier >= 1.1 for earlier, later in zip(starts, starts[1:], strict=False)
+        )
+
+    async def test_cancelled_pacing_wait_does_not_send_or_block_requests(
+        self, api_client: DMIApiClient
+    ) -> None:
+        """Cancelling a queued request releases the queue for another client."""
+        response = AsyncMock()
+        response.status = 200
+        response.json.return_value = {}
+        response.raise_for_status = MagicMock()
+        context = AsyncMock()
+        context.__aenter__.return_value = response
+        api_client._session.get.return_value = context
+        await api_client.get_stations()
+
+        waiting = asyncio.create_task(api_client.get_stations())
+        await asyncio.sleep(0)
+        waiting.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiting
+        assert api_client._session.get.call_count == 1
+
+        other = DMIApiClient(api_client._session)
+        async with asyncio.timeout(5):
+            await other.get_observations("06180")
+        assert api_client._session.get.call_count == 2
+
+    async def test_forecast_bounds_preserve_precipitation_baseline(
+        self, api_client: DMIApiClient, freezer
+    ) -> None:
+        """Keep a previous accumulation while bounding the forecast horizon."""
+        freezer.move_to(datetime(2026, 10, 30, 12, 37, tzinfo=UTC))
+        api_client._request = AsyncMock(
+            return_value={
+                "domain": {
+                    "axes": {
+                        "t": {
+                            "values": [
+                                "2026-10-30T11:00:00Z",
+                                "2026-10-30T12:00:00Z",
+                                "2026-10-30T13:00:00Z",
+                            ]
+                        }
+                    }
+                },
+                "ranges": {"total-precipitation": {"values": [8.0, 9.0, 9.5]}},
+            }
+        )
+
+        forecast = await api_client.get_forecast(55.6761, 12.5683)
+
+        assert api_client._request.await_args.args[1]["datetime"] == (
+            "2026-10-30T11:00:00Z/2026-11-06T12:37:00Z"
+        )
+        assert forecast["hourly"][-1]["precipitation"] == 0.5
 
     # --- get_stations tests ---
 

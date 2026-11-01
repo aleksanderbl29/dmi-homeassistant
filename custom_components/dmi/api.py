@@ -5,10 +5,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import time
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Any
+from weakref import WeakKeyDictionary
 
 import aiohttp
 
@@ -18,6 +21,16 @@ _LOGGER = logging.getLogger(__name__)
 AUTH_PARAM_NAMES = frozenset({"api-key", "apikey", "token"})
 PAGE_SIZE = 1000
 OBSERVATION_PAGE_SIZE = 100
+MIN_REQUEST_INTERVAL = 1.1
+
+
+@dataclass
+class _RequestPacer:
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    last_started: float | None = None
+
+
+_REQUEST_PACERS: WeakKeyDictionary[asyncio.AbstractEventLoop, _RequestPacer] = WeakKeyDictionary()
 
 
 class CannotConnect(Exception):
@@ -71,6 +84,18 @@ class DMIApiClient:
             session: aiohttp client session for making requests.
         """
         self._session = session
+
+    @staticmethod
+    async def _wait_for_request_slot() -> None:
+        """Space request starts across all clients on this event loop."""
+        loop = asyncio.get_running_loop()
+        pacer = _REQUEST_PACERS.setdefault(loop, _RequestPacer())
+        async with pacer.lock:
+            if pacer.last_started is not None:
+                delay = MIN_REQUEST_INTERVAL - (time.monotonic() - pacer.last_started)
+                if delay > 0:
+                    await asyncio.sleep(delay)
+            pacer.last_started = time.monotonic()
 
     @staticmethod
     def _ensure_no_auth_params(params: dict[str, Any] | None) -> None:
@@ -137,6 +162,7 @@ class DMIApiClient:
         """
         try:
             self._ensure_no_auth_params(params)
+            await self._wait_for_request_slot()
             _LOGGER.debug("Making request to %s with params %s", url, params)
             async with self._session.get(
                 url, params=params, timeout=aiohttp.ClientTimeout(total=30)
@@ -581,11 +607,15 @@ class DMIApiClient:
         # Build the coords parameter (POINT format with lon lat)
         coords = f"POINT({longitude} {latitude})"
 
+        now = datetime.now(UTC)
+        # Retain the preceding hourly accumulation for precipitation differences.
+        start = now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
         params = {
             # DMI Forecast EDR position queries document coords, crs, parameter-name and f:
             # https://www.dmi.dk/friedata/dokumentation/forecast-data-edr-api
             "coords": coords,
             "crs": "crs84",
+            "datetime": f"{self._rfc3339(start)}/{self._rfc3339(now + timedelta(days=7))}",
             "parameter-name": "temperature-2m,wind-speed-10m,wind-dir-10m,relative-humidity-2m,total-precipitation,fraction-of-cloud-cover",
             "f": "CoverageJSON",
         }
