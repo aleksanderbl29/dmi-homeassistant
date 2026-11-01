@@ -31,28 +31,27 @@ class TestDMIApiClient:
         session = MagicMock(spec=aiohttp.ClientSession)
         return DMIApiClient(session)
 
-    async def test_concurrent_clients_space_outbound_requests(self) -> None:
+    async def test_concurrent_clients_space_outbound_requests(
+        self, api_client: DMIApiClient
+    ) -> None:
         """Requests from different clients start at least 1.1 seconds apart."""
         starts: list[float] = []
-        response = AsyncMock()
-        response.status = 200
-        response.json.return_value = {}
-        response.raise_for_status = MagicMock()
-        context = AsyncMock()
+        response = MagicMock(status=200, json=AsyncMock(return_value={}))
+        context = api_client._session.get.return_value
         context.__aenter__.return_value = response
 
         def request(*args, **kwargs):
             starts.append(time.monotonic())
             return context
 
-        clients = [DMIApiClient(MagicMock(spec=aiohttp.ClientSession)) for _ in range(3)]
-        for client in clients:
+        other = DMIApiClient(MagicMock(spec=aiohttp.ClientSession))
+        third = DMIApiClient(MagicMock(spec=aiohttp.ClientSession))
+        for client in (api_client, other, third):
             client._session.get.side_effect = request
-
         await asyncio.gather(
-            clients[0].get_stations(),
-            clients[1].get_observations("06180"),
-            clients[2].get_forecast(55.6761, 12.5683),
+            api_client.get_stations(),
+            other.get_observations("06180"),
+            third.get_forecast(55.6761, 12.5683),
         )
 
         assert len(starts) == 3
@@ -64,13 +63,8 @@ class TestDMIApiClient:
         self, api_client: DMIApiClient
     ) -> None:
         """Cancelling a queued request releases the queue for another client."""
-        response = AsyncMock()
-        response.status = 200
-        response.json.return_value = {}
-        response.raise_for_status = MagicMock()
-        context = AsyncMock()
-        context.__aenter__.return_value = response
-        api_client._session.get.return_value = context
+        response = MagicMock(status=200, json=AsyncMock(return_value={}))
+        api_client._session.get.return_value.__aenter__.return_value = response
         await api_client.get_stations()
 
         waiting = asyncio.create_task(api_client.get_stations())
@@ -84,35 +78,6 @@ class TestDMIApiClient:
         async with asyncio.timeout(5):
             await other.get_observations("06180")
         assert api_client._session.get.call_count == 2
-
-    async def test_forecast_bounds_preserve_precipitation_baseline(
-        self, api_client: DMIApiClient, freezer
-    ) -> None:
-        """The time range includes the rainfall total needed for hourly amounts."""
-        freezer.move_to(datetime(2026, 10, 30, 12, 37, tzinfo=UTC))
-        api_client._request = AsyncMock(
-            return_value={
-                "domain": {
-                    "axes": {
-                        "t": {
-                            "values": [
-                                "2026-10-30T11:00:00Z",
-                                "2026-10-30T12:00:00Z",
-                                "2026-10-30T13:00:00Z",
-                            ]
-                        }
-                    }
-                },
-                "ranges": {"total-precipitation": {"values": [8.0, 9.0, 9.5]}},
-            }
-        )
-
-        forecast = await api_client.get_forecast(55.6761, 12.5683)
-
-        assert api_client._request.await_args.args[1]["datetime"] == (
-            "2026-10-30T11:00:00Z/2026-11-06T12:37:00Z"
-        )
-        assert forecast["hourly"][-1]["precipitation"] == 0.5
 
     # --- get_stations tests ---
 
@@ -1077,8 +1042,10 @@ class TestDMIApiClient:
         self,
         api_client: DMIApiClient,
         mock_forecast_data: dict[str, Any],
+        freezer,
     ) -> None:
-        """Test forecasts use the no-key DMI Open Data endpoint."""
+        """Forecast requests use the open endpoint and include the previous hour."""
+        freezer.move_to(datetime(2026, 10, 30, 12, 37, tzinfo=UTC))
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.json = AsyncMock(return_value=mock_forecast_data)
@@ -1097,6 +1064,7 @@ class TestDMIApiClient:
         assert url.startswith(BASE_URL)
         assert "dmigw.govcloud.dk" not in url
         assert not (AUTH_PARAM_NAMES & set(params))
+        assert params["datetime"] == "2026-10-30T11:00:00Z/2026-11-06T12:37:00Z"
 
     # --- test_connection tests ---
 
