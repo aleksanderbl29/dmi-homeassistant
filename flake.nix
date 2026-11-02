@@ -5,10 +5,6 @@
     devShells = nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ] (system: {
       default = let pkgs = import nixpkgs { inherit system; }; in pkgs.mkShell {
         packages = [ pkgs.python313 pkgs.python314 pkgs.uv pkgs.actionlint ];
-        UV_PYTHON = "${pkgs.python313}/bin/python3";
-        UV_PYTHON_DOWNLOADS = "never";
-        LD_LIBRARY_PATH = nixpkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux
-          (pkgs.lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib ]);
       };
     });
   };

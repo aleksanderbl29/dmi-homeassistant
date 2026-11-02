@@ -169,11 +169,6 @@ The integration remains API-key-free by default. Authenticated DMI sources must 
 
 The API has rate limits. The default update interval of 10 minutes should be well within limits for normal use.
 
-The integration waits at least 1.1 seconds between DMI request starts across
-all its API clients, including requests during station setup. Weather forecast
-queries cover the previous hour through seven days ahead. The previous hour's
-rainfall total is needed to calculate hourly precipitation.
-
 ## Troubleshooting
 
 ### No sensors appearing
@@ -248,10 +243,8 @@ already allow the new version.
 Use the Nix development shell for local checks:
 
 ```sh
-nix develop -c uv sync --locked --extra test --extra dev
-nix develop -c uv run --locked pytest tests/
-nix develop -c uv run --locked ruff check .
-nix develop -c uv run --locked ruff format --check .
+nix develop -c uv sync --frozen --extra test
+nix develop -c uv run --frozen --extra test pytest tests/
 nix develop -c python .github/scripts/ha_compat.py matrix
 nix develop -c python -m unittest discover -s .github/scripts -p 'test_*.py'
 nix develop -c actionlint .github/workflows/test.yml
