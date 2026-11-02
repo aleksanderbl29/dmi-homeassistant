@@ -1,3 +1,10 @@
+## [2.0.2](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v2.0.1...v2.0.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* **api:** space DMI requests and limit forecast queries ([#31](https://github.com/aleksanderbl29/dmi-homeassistant/issues/31)) ([9819e1d](https://github.com/aleksanderbl29/dmi-homeassistant/commit/9819e1dfc630ac2eb7b8a6ae0096bfa806dffebb))
+
 ## [2.0.1](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v2.0.0...v2.0.1) (2026-10-30)
 
 
