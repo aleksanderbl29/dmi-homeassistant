@@ -1,3 +1,10 @@
+## [2.0.3](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v2.0.2...v2.0.3) (2026-11-02)
+
+
+### Reverts
+
+* Revert "fix(api): space DMI requests and limit forecast queries ([#31](https://github.com/aleksanderbl29/dmi-homeassistant/issues/31))" ([3f08231](https://github.com/aleksanderbl29/dmi-homeassistant/commit/3f082311baf1640dc4d51626da8bef71d0804558))
+
 ## [2.0.2](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v2.0.1...v2.0.2) (2026-11-02)
 
 
