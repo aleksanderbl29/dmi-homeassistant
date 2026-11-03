@@ -107,8 +107,8 @@ def requirements(version: str) -> str:
         dependencies.append(name if name.startswith("pytest") else dependency)
     if version == "dev":
         dependencies.append(
-            "pytest-home-assistant @ git+https://github.com/home-assistant/core.git@dev"
-            "#subdirectory=packages/pytest-home-assistant"
+            "pytest-homeassistant @ git+https://github.com/home-assistant/core.git@dev"
+            "#subdirectory=packages/pytest-homeassistant"
         )
     dependencies.append(
         f"homeassistant @ {DEV_URL}" if version == "dev" else f"homeassistant=={version}"

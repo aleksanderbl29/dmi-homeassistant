@@ -56,8 +56,8 @@ class CompatibilityTests(unittest.TestCase):
         dependencies = requirements("dev").splitlines()
         self.assertIn(f"homeassistant @ {DEV_URL}", dependencies)
         self.assertIn(
-            "pytest-home-assistant @ git+https://github.com/home-assistant/core.git@dev"
-            "#subdirectory=packages/pytest-home-assistant",
+            "pytest-homeassistant @ git+https://github.com/home-assistant/core.git@dev"
+            "#subdirectory=packages/pytest-homeassistant",
             dependencies,
         )
         self.assertNotIn("pytest-homeassistant-custom-component", dependencies)

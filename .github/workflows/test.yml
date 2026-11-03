@@ -118,7 +118,7 @@ jobs:
               print("Test plugin:", version("pytest-homeassistant-custom-component"))
               assert installed == os.environ["HA_VERSION"]
           elif os.environ["HA_MODE"] == "development":
-              print("Test plugin:", version("pytest-home-assistant"))
+              print("Test plugin:", version("pytest-homeassistant"))
               assert ".dev" in installed
           PY
 
