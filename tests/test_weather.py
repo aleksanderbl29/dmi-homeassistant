@@ -169,20 +169,39 @@ class TestDMIWeather:
 
         assert entity.condition == "cloudy"
 
-    def test_condition_sunny_from_code(
+    def test_condition_no_significant_weather_uses_cloud_cover(
         self,
         mock_coordinator: MagicMock,
         mock_config_entry: MockConfigEntry,
     ) -> None:
-        """Test sunny condition from weather code."""
+        """Automatic-station code 100 (no significant weather) defers to cloud cover."""
         mock_coordinator.data = {
             "observations": {
-                "weather": {"value": 0},
+                "weather": {"value": 100.0},
+                "cloud_cover": {"value": 0.0},
             },
         }
         entity = DMIWeather(mock_coordinator, mock_config_entry)
 
         assert entity.condition == "sunny"
+
+    async def test_clear_sky_at_night_is_clear_night(
+        self,
+        mock_coordinator: MagicMock,
+        mock_config_entry: MockConfigEntry,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A clear sky after sunset is clear-night, now and in the hourly forecast."""
+        monkeypatch.setattr("custom_components.dmi.weather.sun.is_up", lambda *_: False)
+        mock_coordinator.data = {
+            "observations": {"weather": {"value": 100.0}, "cloud_cover": {"value": 5.0}},
+            "forecast": {"hourly": [{"datetime": "2024-01-15T22:00:00Z", "cloud_cover": 0.0}]},
+        }
+        entity = DMIWeather(mock_coordinator, mock_config_entry)
+        entity.hass = MagicMock()
+
+        assert entity.condition == "clear-night"
+        assert (await entity.async_forecast_hourly())[0]["condition"] == "clear-night"
 
     def test_condition_rainy_from_code(
         self,
