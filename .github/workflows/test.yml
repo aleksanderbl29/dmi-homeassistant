@@ -111,14 +111,16 @@ jobs:
         run: |
           .venv/bin/python - <<'PY'
           import os
-          from importlib.metadata import version
+          from importlib.metadata import PackageNotFoundError, version
           installed = version("homeassistant")
           print("Home Assistant:", installed)
-          if os.environ["HA_MODE"] == "stable":
+          try:
+              print("Test plugin:", version("pytest-homeassistant"))
+          except PackageNotFoundError:
               print("Test plugin:", version("pytest-homeassistant-custom-component"))
+          if os.environ["HA_MODE"] == "stable":
               assert installed == os.environ["HA_VERSION"]
           elif os.environ["HA_MODE"] == "development":
-              print("Test plugin:", version("pytest-homeassistant"))
               assert ".dev" in installed
           PY
 
@@ -128,8 +130,6 @@ jobs:
           .venv/bin/python -c 'import custom_components.dmi.config_flow; import custom_components.dmi.sensor; import custom_components.dmi.weather'
 
       - name: Run tests with coverage
-        env:
-          HA_MODE: ${{ matrix.mode }}
         run: |
           .venv/bin/python .github/scripts/run_tests.py tests/ \
             --cov=custom_components/dmi \

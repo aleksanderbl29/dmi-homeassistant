@@ -94,20 +94,22 @@ def matrix() -> dict:
 
 
 def requirements(version: str) -> str:
+    # HA moved its test helpers into an in-tree package in November 2026.
+    upstream_fixtures = version == "dev" or tuple(map(int, version.split("."))) >= (2026, 11, 0)
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
     dependencies = list(project["dependencies"])
     for dependency in project["optional-dependencies"]["test"]:
         name = re.split(r"[<>=!~\[; ]", dependency, maxsplit=1)[0]
         if name == "homeassistant":
             continue
-        if name == "pytest-homeassistant-custom-component" and version == "dev":
+        if name == "pytest-homeassistant-custom-component" and upstream_fixtures:
             continue
         # Historical HA fixtures pin their own pytest stack. Resolve matching
         # tooling rather than applying today's test-tool minimums to old HA.
         dependencies.append(name if name.startswith("pytest") else dependency)
-    if version == "dev":
+    if upstream_fixtures:
         dependencies.append(
-            "pytest-homeassistant @ git+https://github.com/home-assistant/core.git@dev"
+            f"pytest-homeassistant @ git+https://github.com/home-assistant/core.git@{version}"
             "#subdirectory=packages/pytest-homeassistant"
         )
     dependencies.append(

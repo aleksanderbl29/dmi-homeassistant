@@ -44,9 +44,10 @@ class CompatibilityTests(unittest.TestCase):
             python_version("unknown")
 
     def test_historical_environment_can_resolve_matching_fixture_stack(self):
-        dependencies = requirements("2025.12.0").splitlines()
-        self.assertIn("homeassistant==2025.12.0", dependencies)
+        dependencies = requirements("2026.10.4").splitlines()
+        self.assertIn("homeassistant==2026.10.4", dependencies)
         self.assertIn("pytest-homeassistant-custom-component", dependencies)
+        self.assertFalse(any(line.startswith("pytest-homeassistant @") for line in dependencies))
         self.assertIn("pytest", dependencies)
         self.assertIn("aiohttp>=3.9.0,<4.0.0", dependencies)
         self.assertIn("aioresponses>=0.7", dependencies)
@@ -61,6 +62,18 @@ class CompatibilityTests(unittest.TestCase):
             dependencies,
         )
         self.assertNotIn("pytest-homeassistant-custom-component", dependencies)
+
+    def test_modern_stable_environment_uses_fixtures_from_matching_release(self):
+        for version in ("2026.11.0", "2026.11.1", "2027.1.0"):
+            with self.subTest(version=version):
+                dependencies = requirements(version).splitlines()
+                self.assertIn(f"homeassistant=={version}", dependencies)
+                self.assertIn(
+                    f"pytest-homeassistant @ git+https://github.com/home-assistant/core.git@{version}"
+                    "#subdirectory=packages/pytest-homeassistant",
+                    dependencies,
+                )
+                self.assertNotIn("pytest-homeassistant-custom-component", dependencies)
 
     def test_matrix_separates_historical_current_locked_and_development_jobs(self):
         root = MagicMock()

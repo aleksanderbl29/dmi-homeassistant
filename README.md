@@ -218,17 +218,17 @@ CI runs the test suite against the exact minimum, two intermediate release
 months, the latest stable release, and the environment recorded in `uv.lock`.
 It selects the intermediate months evenly across the supported range and uses
 their latest patch releases. Each version uses its required Python version and
-a matching `pytest-homeassistant-custom-component` release. Historical tests
+a matching test fixture package. Historical tests
 use the pytest versions required by that plugin.
 Historical jobs limit dependency releases to one week after the Home Assistant
 release, so modern transitive dependencies cannot break an old environment.
 The latest stable job resolves current dependencies.
 
 An experimental job tests Home Assistant's `dev` branch with the test plugin
-from that same branch. Released compatibility jobs use
-`pytest-homeassistant-custom-component`; the development job uses Home
-Assistant's in-tree `pytest-homeassistant` package because the released plugin
-can lag unreleased core changes. The development test runner imports Home
+from that same branch. Compatibility jobs before Home Assistant 2026.11 use
+`pytest-homeassistant-custom-component`. From 2026.11 onward, jobs use the
+in-tree `pytest-homeassistant` package from the matching release tag. The
+development job uses that package from `dev`. The test runner imports Home
 Assistant before pytest plugins so its HTTP client compatibility setup runs
 before the `respx` plugin imports `httpx`. Failures remain visible but do not
 block merging because unreleased Home Assistant changes can still break the
