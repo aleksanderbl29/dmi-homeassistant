@@ -958,6 +958,52 @@ class TestDMIApiClient:
         precipitation = [entry["precipitation"] for entry in forecast["hourly"]]
         assert precipitation == pytest.approx([0.0, 0.1, 0.1, 0])
 
+    @pytest.mark.parametrize(
+        ("cumulative", "expected"),
+        [
+            ([0.2, 0.3], [0.2, 0.1]),
+            ([0.7, 0.8], [0.7, 0.1]),
+            ([0.2, 0.299999], [0.2, 0.099999]),
+            ([0.2, 0.300001], [0.2, 0.100001]),
+            ([0.123456, 0.123457], [0.123456, 0.000001]),
+            ([0.001707077, 0.011663437], [0.001707077, 0.00995636]),
+            ([0.2, 0.21, 0.24], [0.2, 0.01, 0.03]),
+            ([0.3, 0.3, 0.0, 0.1], [0.3, 0.0, 0.0, 0.1]),
+            ([0.2, None, 0.3], [0.2, None, 0.1]),
+        ],
+    )
+    async def test_get_forecast_preserves_precipitation_decimal_differences(
+        self,
+        api_client: DMIApiClient,
+        cumulative: list[float | None],
+        expected: list[float | None],
+    ) -> None:
+        """Preserve decimal amounts without rounding traces or threshold neighbors."""
+        data = {
+            "domain": {
+                "axes": {
+                    "t": {
+                        "values": [
+                            f"2026-11-11T{hour:02d}:00:00Z" for hour in range(len(cumulative))
+                        ]
+                    }
+                }
+            },
+            "ranges": {"total-precipitation": {"values": cumulative}},
+        }
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=data)
+        mock_response.raise_for_status = MagicMock()
+        mock_context = AsyncMock()
+        mock_context.__aenter__.return_value = mock_response
+        api_client._session.get = MagicMock(return_value=mock_context)
+
+        forecast = await api_client.get_forecast(55.6761, 12.5683)
+
+        amounts = [entry.get("precipitation") for entry in forecast["hourly"]]
+        assert amounts == expected
+
     async def test_get_forecast_handles_missing_data(
         self,
         api_client: DMIApiClient,
