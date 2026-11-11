@@ -1,3 +1,10 @@
+## [2.0.4](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v2.0.3...v2.0.4) (2026-11-11)
+
+
+### Bug Fixes
+
+* **ci:** use matching fixtures for Home Assistant 2026.11 ([a86ea1d](https://github.com/aleksanderbl29/dmi-homeassistant/commit/a86ea1d4f10b8785598cb77e0856f4b7248c0b4d))
+
 ## [2.0.3](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v2.0.2...v2.0.3) (2026-11-02)
 
 
