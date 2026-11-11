@@ -7,6 +7,7 @@ import logging
 import math
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from email.utils import parsedate_to_datetime
 from typing import Any
 
@@ -612,7 +613,7 @@ class DMIApiClient:
         precipitation_data = ranges.get("total-precipitation", {}).get("values", [])
         cloud_cover_data = ranges.get("fraction-of-cloud-cover", {}).get("values", [])
 
-        previous_precipitation: float | None = None
+        previous_precipitation: Decimal | None = None
         for i, time_value in enumerate(time_values):
             forecast_entry: dict[str, Any] = {
                 "datetime": time_value,
@@ -633,13 +634,14 @@ class DMIApiClient:
                 forecast_entry["humidity"] = humidity_data[i]
 
             if i < len(precipitation_data) and precipitation_data[i] is not None:
-                precipitation = float(precipitation_data[i])
+                # Subtract decimal values before converting back to float so
+                # 0.3 - 0.2 yields 0.1 without imposing a fixed mm precision.
+                precipitation = Decimal(str(precipitation_data[i]))
                 if previous_precipitation is None:
-                    forecast_entry["precipitation"] = precipitation
+                    forecast_entry["precipitation"] = float(precipitation)
                 else:
-                    forecast_entry["precipitation"] = max(
-                        precipitation - previous_precipitation,
-                        0,
+                    forecast_entry["precipitation"] = float(
+                        max(precipitation - previous_precipitation, 0)
                     )
                 previous_precipitation = precipitation
 
