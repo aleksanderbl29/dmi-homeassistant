@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
+from astral import Observer
+from astral.sun import elevation
 from homeassistant.components.weather import (
+    ATTR_CONDITION_CLOUDY,
     Forecast,
     WeatherEntity,
     WeatherEntityFeature,
@@ -19,16 +23,25 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import sun
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
+from .conditions import (
+    condition_from_cloud_cover,
+    condition_from_weather_code,
+    forecast_condition,
+)
 from .const import (
     ATTRIBUTION,
-    CONDITION_MAP,
+    CONF_LATITUDE,
+    CONF_LONGITUDE,
     CONF_SETUP_TYPE,
     CONF_STATION_ID,
     CONF_STATION_NAME,
+    CONF_USE_COORDINATES,
     DOMAIN,
     SETUP_TYPE_ADVANCED,
 )
@@ -127,59 +140,54 @@ class DMIWeather(CoordinatorEntity[DMIDataUpdateCoordinator], WeatherEntity):
         obs = self._observations.get(key, {})
         return obs.get("value") if obs else None
 
-    @staticmethod
-    def _forecast_condition(entry: dict[str, Any]) -> str | None:
+    def _is_daytime(
+        self,
+        latitude: float | None,
+        longitude: float | None,
+        when: str | datetime | None = None,
+    ) -> bool:
+        """Calculate daylight at the data location, falling back to HA coordinates."""
+        point = dt_util.parse_datetime(when) if isinstance(when, str) else when
+        if latitude is not None and longitude is not None:
+            return elevation(Observer(latitude, longitude), point or dt_util.utcnow()) > 0
+        if self.hass is None:
+            return True
+        return sun.is_up(self.hass, point)
+
+    def _forecast_condition(self, entry: dict[str, Any]) -> str | None:
         """Return a Home Assistant condition for a forecast entry."""
-        precipitation = entry.get("precipitation")
-        if precipitation is not None:
-            try:
-                if float(precipitation) > 0:
-                    return "rainy"
-            except (ValueError, TypeError):
-                pass
-
-        cloud_cover = entry.get("cloud_cover")
-        if cloud_cover is not None:
-            try:
-                cloud = float(cloud_cover)
-                if cloud < 20:
-                    return "sunny"
-                if cloud < 60:
-                    return "partlycloudy"
-                return "cloudy"
-            except (ValueError, TypeError):
-                pass
-
-        return None
+        return forecast_condition(
+            entry,
+            is_daytime=self._is_daytime(
+                self.coordinator.latitude, self.coordinator.longitude, entry.get("datetime")
+            ),
+        )
 
     @property
     def condition(self) -> str | None:
         """Return the current condition."""
-        # Try to get weather code from observations
-        weather_code = self._get_observation_value("weather")
+        code_condition = condition_from_weather_code(self._get_observation_value("weather"))
+        if code_condition is not None:
+            return code_condition
 
-        if weather_code is not None:
-            try:
-                code = int(weather_code)
-                return CONDITION_MAP.get(code, "cloudy")
-            except (ValueError, TypeError):
-                pass
+        # The weather code is missing or only says "no significant weather":
+        # describe the sky from the observed cloud cover.
+        cloud_observation = self._observations.get("cloud_cover") or {}
+        latitude = cloud_observation.get(CONF_LATITUDE)
+        longitude = cloud_observation.get(CONF_LONGITUDE)
+        if (latitude is None or longitude is None) and not self._config_entry.data.get(
+            CONF_USE_COORDINATES, False
+        ):
+            latitude = self._config_entry.data.get(CONF_LATITUDE)
+            longitude = self._config_entry.data.get(CONF_LONGITUDE)
+        cloud_condition = condition_from_cloud_cover(
+            self._get_observation_value("cloud_cover"),
+            is_daytime=self._is_daytime(latitude, longitude),
+        )
+        if cloud_condition is not None:
+            return cloud_condition
 
-        # Default based on cloud cover if no weather code
-        cloud_cover = self._get_observation_value("cloud_cover")
-        if cloud_cover is not None:
-            try:
-                cover = float(cloud_cover)
-                if cover < 20:
-                    return "sunny"
-                elif cover < 60:
-                    return "partlycloudy"
-                else:
-                    return "cloudy"
-            except (ValueError, TypeError):
-                pass
-
-        return "cloudy"
+        return ATTR_CONDITION_CLOUDY
 
     @property
     def native_temperature(self) -> float | None:

@@ -721,6 +721,8 @@ class TestDMIApiClient:
 
         assert "temp_dry" in observations
         assert observations["temp_dry"]["value"] == 15.5
+        assert observations["temp_dry"]["latitude"] == 55.614
+        assert observations["temp_dry"]["longitude"] == 12.6454
         assert observations["humidity"]["value"] == 75.0
         assert observations["wind_speed"]["value"] == 5.2
 
