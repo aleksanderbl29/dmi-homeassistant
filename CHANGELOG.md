@@ -1,3 +1,11 @@
+## [2.0.5](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v2.0.4...v2.0.5) (2026-11-19)
+
+
+### Bug Fixes
+
+* preserve decimal differences in forecast precipitation ([#35](https://github.com/aleksanderbl29/dmi-homeassistant/issues/35)) ([652f38e](https://github.com/aleksanderbl29/dmi-homeassistant/commit/652f38ed7153175a0ebddba9a2de7df3911ef960))
+* **weather:** decode DMI present-weather codes and tidy forecast conditions ([#32](https://github.com/aleksanderbl29/dmi-homeassistant/issues/32)) ([508de5a](https://github.com/aleksanderbl29/dmi-homeassistant/commit/508de5a5fc3b9eb9a308cac13deaa45458e0aa8a))
+
 ## [2.0.4](https://github.com/aleksanderbl29/dmi-homeassistant/compare/v2.0.3...v2.0.4) (2026-11-11)
 
 
