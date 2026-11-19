@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -23,6 +24,14 @@ from tests.ha_test_compat import MockConfigEntry
 
 class TestDMIWeather:
     """Test cases for DMIWeather entity."""
+
+    @pytest.fixture(autouse=True)
+    def daytime(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Keep current-condition tests independent of the time they run."""
+        monkeypatch.setattr(
+            "custom_components.dmi.weather.dt_util.utcnow",
+            lambda: datetime(2024, 1, 15, 12, tzinfo=UTC),
+        )
 
     @pytest.fixture
     def mock_coordinator(
@@ -192,7 +201,10 @@ class TestDMIWeather:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A clear sky after sunset is clear-night, now and in the hourly forecast."""
-        monkeypatch.setattr("custom_components.dmi.weather.sun.is_up", lambda *_: False)
+        monkeypatch.setattr(
+            "custom_components.dmi.weather.dt_util.utcnow",
+            lambda: datetime(2024, 1, 15, 22, tzinfo=UTC),
+        )
         mock_coordinator.data = {
             "observations": {"weather": {"value": 100.0}, "cloud_cover": {"value": 5.0}},
             "forecast": {"hourly": [{"datetime": "2024-01-15T22:00:00Z", "cloud_cover": 0.0}]},
@@ -202,6 +214,86 @@ class TestDMIWeather:
 
         assert entity.condition == "clear-night"
         assert (await entity.async_forecast_hourly())[0]["condition"] == "clear-night"
+
+    @pytest.mark.parametrize(
+        ("station_longitude", "forecast_longitude", "expected_current", "expected_forecast"),
+        [(0, 180, "sunny", "clear-night"), (180, 0, "clear-night", "sunny")],
+    )
+    async def test_daylight_uses_each_data_location(
+        self,
+        hass: HomeAssistant,
+        mock_coordinator: MagicMock,
+        station_longitude: float,
+        forecast_longitude: float,
+        expected_current: str,
+        expected_forecast: str,
+    ) -> None:
+        """Station and forecast daylight differ even with HA coordinates enabled."""
+        hass.config.latitude = 0
+        hass.config.longitude = 90
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={"use_coordinates": True, "latitude": 0, "longitude": forecast_longitude},
+        )
+        mock_coordinator.latitude = 0
+        mock_coordinator.longitude = forecast_longitude
+        mock_coordinator.data = {
+            "observations": {
+                "cloud_cover": {"value": 0, "latitude": 0, "longitude": station_longitude},
+            },
+            "forecast": {"hourly": [{"datetime": "2024-01-15T12:00:00Z", "cloud_cover": 0}]},
+        }
+        entity = DMIWeather(mock_coordinator, entry)
+        entity.hass = hass
+
+        assert entity.condition == expected_current
+        forecasts = await entity.async_forecast_hourly()
+        assert forecasts is not None
+        assert forecasts[0]["condition"] == expected_forecast
+
+    @pytest.mark.parametrize("latitude", [80, -80])
+    async def test_polar_daylight(
+        self,
+        mock_coordinator: MagicMock,
+        mock_config_entry: MockConfigEntry,
+        latitude: float,
+    ) -> None:
+        """Polar winter and summer work without a daily sunrise or sunset."""
+        mock_coordinator.latitude = latitude
+        mock_coordinator.longitude = 0
+        mock_coordinator.data = {
+            "forecast": {"hourly": [{"datetime": "2024-01-15T12:00:00Z", "cloud_cover": 0}]},
+        }
+        entity = DMIWeather(mock_coordinator, mock_config_entry)
+        forecasts = await entity.async_forecast_hourly()
+        assert forecasts is not None
+        assert forecasts[0]["condition"] == ("clear-night" if latitude > 0 else "sunny")
+
+    @pytest.mark.parametrize("longitude", [None, 180])
+    async def test_missing_coordinates_use_ha_location(
+        self,
+        hass: HomeAssistant,
+        mock_coordinator: MagicMock,
+        longitude: float | None,
+    ) -> None:
+        """Missing or partial location data falls back to Home Assistant."""
+        hass.config.latitude = 0
+        hass.config.longitude = 180
+        entry = MockConfigEntry(domain=DOMAIN, data={"use_coordinates": True})
+        mock_coordinator.data = {
+            "observations": {"cloud_cover": {"value": 0, "longitude": longitude}},
+            "forecast": {"hourly": [{"datetime": "2024-01-15T12:00:00Z", "cloud_cover": 0}]},
+        }
+        entity = DMIWeather(mock_coordinator, entry)
+        entity.hass = hass
+        # Forecast support was established at setup, before coordinates became unavailable.
+        mock_coordinator.latitude = None
+        mock_coordinator.longitude = longitude
+
+        assert entity.condition == "clear-night"
+        forecasts = await entity.async_forecast_hourly()
+        assert forecasts is not None
+        assert forecasts[0]["condition"] == "clear-night"
 
     def test_condition_rainy_from_code(
         self,

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
+from astral import Observer
+from astral.sun import elevation
 from homeassistant.components.weather import (
     ATTR_CONDITION_CLOUDY,
     Forecast,
@@ -33,9 +36,12 @@ from .conditions import (
 )
 from .const import (
     ATTRIBUTION,
+    CONF_LATITUDE,
+    CONF_LONGITUDE,
     CONF_SETUP_TYPE,
     CONF_STATION_ID,
     CONF_STATION_NAME,
+    CONF_USE_COORDINATES,
     DOMAIN,
     SETUP_TYPE_ADVANCED,
 )
@@ -134,19 +140,28 @@ class DMIWeather(CoordinatorEntity[DMIDataUpdateCoordinator], WeatherEntity):
         obs = self._observations.get(key, {})
         return obs.get("value") if obs else None
 
-    def _is_daytime(self, when: Any = None) -> bool:
-        """Return whether the sun is up at ``when`` (default: now) at the HA location."""
+    def _is_daytime(
+        self,
+        latitude: float | None,
+        longitude: float | None,
+        when: str | datetime | None = None,
+    ) -> bool:
+        """Calculate daylight at the data location, falling back to HA coordinates."""
+        point = dt_util.parse_datetime(when) if isinstance(when, str) else when
+        if latitude is not None and longitude is not None:
+            return elevation(Observer(latitude, longitude), point or dt_util.utcnow()) > 0
         if self.hass is None:
             return True
-        point = dt_util.parse_datetime(when) if isinstance(when, str) else when
-        try:
-            return sun.is_up(self.hass, point)
-        except Exception:  # noqa: BLE001 - never let astronomy break the entity
-            return True
+        return sun.is_up(self.hass, point)
 
     def _forecast_condition(self, entry: dict[str, Any]) -> str | None:
         """Return a Home Assistant condition for a forecast entry."""
-        return forecast_condition(entry, is_daytime=self._is_daytime(entry.get("datetime")))
+        return forecast_condition(
+            entry,
+            is_daytime=self._is_daytime(
+                self.coordinator.latitude, self.coordinator.longitude, entry.get("datetime")
+            ),
+        )
 
     @property
     def condition(self) -> str | None:
@@ -157,9 +172,17 @@ class DMIWeather(CoordinatorEntity[DMIDataUpdateCoordinator], WeatherEntity):
 
         # The weather code is missing or only says "no significant weather":
         # describe the sky from the observed cloud cover.
+        cloud_observation = self._observations.get("cloud_cover") or {}
+        latitude = cloud_observation.get(CONF_LATITUDE)
+        longitude = cloud_observation.get(CONF_LONGITUDE)
+        if (latitude is None or longitude is None) and not self._config_entry.data.get(
+            CONF_USE_COORDINATES, False
+        ):
+            latitude = self._config_entry.data.get(CONF_LATITUDE)
+            longitude = self._config_entry.data.get(CONF_LONGITUDE)
         cloud_condition = condition_from_cloud_cover(
             self._get_observation_value("cloud_cover"),
-            is_daytime=self._is_daytime(),
+            is_daytime=self._is_daytime(latitude, longitude),
         )
         if cloud_condition is not None:
             return cloud_condition

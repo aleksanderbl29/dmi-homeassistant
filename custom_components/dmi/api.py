@@ -347,6 +347,11 @@ class DMIApiClient:
                     "value": props.get("value"),
                     "observed": observed,
                 }
+                geometry = feature.get("geometry") or {}
+                coordinates = geometry.get("coordinates") or []
+                if geometry.get("type") == "Point" and len(coordinates) >= 2:
+                    observation["longitude"] = coordinates[0]
+                    observation["latitude"] = coordinates[1]
                 if props.get("created") is not None:
                     observation["created"] = props["created"]
                 if props.get("qcStatus") is not None:
