@@ -16,6 +16,8 @@ from custom_components.dmi.conditions import (
     [
         (100.0, None),  # automatic (WMO 4680 + 100): no significant weather -> cloud cover
         (110, "fog"),
+        (111, "snowy"),
+        (76, "snowy"),
         (163, "pouring"),
         (171, "snowy"),
         (192, "lightning-rainy"),

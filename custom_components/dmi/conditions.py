@@ -52,7 +52,7 @@ WMO_4680_CONDITIONS: dict[int, str] = {
     # 00-04 no significant weather / cloud development / haze -> use cloud cover
     5: ATTR_CONDITION_FOG,  # haze, visibility below 1 km
     10: ATTR_CONDITION_FOG,  # mist
-    11: ATTR_CONDITION_FOG,  # diamond dust
+    11: ATTR_CONDITION_SNOWY,  # diamond dust
     12: ATTR_CONDITION_LIGHTNING,  # distant lightning
     18: ATTR_CONDITION_WINDY,  # squalls
     # 20-26 weather during the preceding hour, 27-29 blowing snow/sand -> cloud cover
